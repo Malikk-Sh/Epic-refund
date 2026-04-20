@@ -66,7 +66,7 @@ export function createLevel02(systems) {
   r01map[7][4] = 2; r01map[7][5] = 2;
   // Точка спавна игрока
   r01map[4][2] = 7;
-  const room01 = new Room('room_01', r01map, TS);
+  const room01 = new Room('l2_room_01', r01map, TS);
 
   // Грибл стоит у правой стены, но не в двери
   const griblPos = room01.tilemap.tileToWorldCenter(11, 7);
@@ -78,7 +78,7 @@ export function createLevel02(systems) {
 
   // === 2-2: Коридор — первый слабый противник ===
   const r02map = makeRoom(['west', 'east']);
-  const room02 = new Room('room_02', r02map, TS);
+  const room02 = new Room('l2_room_02', r02map, TS);
   // Слизь — просто стоит, боится игрока
   const s1 = room02.tilemap.tileToWorldCenter(7, 5);
   room02.addEnemy(new Slime(s1.x, s1.y));
@@ -88,7 +88,7 @@ export function createLevel02(systems) {
   // Препятствия для разнообразия
   r03map[3][7] = 2;
   r03map[6][3] = 2;
-  const room03 = new Room('room_03', r03map, TS);
+  const room03 = new Room('l2_room_03', r03map, TS);
   const g1 = room03.tilemap.tileToWorldCenter(5, 3);
   const g2 = room03.tilemap.tileToWorldCenter(10, 6);
   room03.addEnemy(new Goblin(g1.x, g1.y));
@@ -99,7 +99,7 @@ export function createLevel02(systems) {
   const r04map = makeRoom(['north', 'east']);
   // Визуальный тайл Врат по центру
   r04map[5][7] = 6;
-  const room04 = new Room('room_04', r04map, TS);
+  const room04 = new Room('l2_room_04', r04map, TS);
   const gatePos4 = room04.tilemap.tileToWorldCenter(7, 5);
   room04.setGate({
     id: 'gate_2_1',
@@ -119,7 +119,7 @@ export function createLevel02(systems) {
   // Тренировочные стойки
   r05map[3][4] = 2; r05map[3][10] = 2;
   r05map[6][6] = 2; r05map[6][8] = 2;
-  const room05 = new Room('room_05', r05map, TS);
+  const room05 = new Room('l2_room_05', r05map, TS);
   const sk1 = room05.tilemap.tileToWorldCenter(5, 5);
   const sk2 = room05.tilemap.tileToWorldCenter(9, 3);
   const sk3 = room05.tilemap.tileToWorldCenter(9, 7);
@@ -130,7 +130,7 @@ export function createLevel02(systems) {
   // === 2-6: Вторые Врата Забвения ===
   const r06map = makeRoom(['north', 'east']);
   r06map[5][7] = 6;
-  const room06 = new Room('room_06', r06map, TS);
+  const room06 = new Room('l2_room_06', r06map, TS);
   const gatePos6 = room06.tilemap.tileToWorldCenter(7, 5);
   room06.setGate({
     id: 'gate_2_2',
@@ -145,42 +145,42 @@ export function createLevel02(systems) {
   // === 2-7: Выход с уровня ===
   const r07map = makeRoom(['west']);
   // Яркий тайл "выход" — просто визуально, триггер делается через проверку координат
-  const room07 = new Room('room_07', r07map, TS);
+  const room07 = new Room('l2_room_07', r07map, TS);
   // Без врагов, без Врат — мирная комната
   room07.openDoors();
   room07.isCleared = true;
 
   // === Связи между комнатами ===
-  room01.setNeighbor('east', 'room_02');
-  room01.addDoor('east', 'room_02');
+  room01.setNeighbor('east', 'l2_room_02');
+  room01.addDoor('east', 'l2_room_02');
 
-  room02.setNeighbor('west', 'room_01');
-  room02.addDoor('west', 'room_01');
-  room02.setNeighbor('east', 'room_03');
-  room02.addDoor('east', 'room_03');
+  room02.setNeighbor('west', 'l2_room_01');
+  room02.addDoor('west', 'l2_room_01');
+  room02.setNeighbor('east', 'l2_room_03');
+  room02.addDoor('east', 'l2_room_03');
 
-  room03.setNeighbor('west', 'room_02');
-  room03.addDoor('west', 'room_02');
-  room03.setNeighbor('south', 'room_04');
-  room03.addDoor('south', 'room_04');
+  room03.setNeighbor('west', 'l2_room_02');
+  room03.addDoor('west', 'l2_room_02');
+  room03.setNeighbor('south', 'l2_room_04');
+  room03.addDoor('south', 'l2_room_04');
 
-  room04.setNeighbor('north', 'room_03');
-  room04.addDoor('north', 'room_03');
-  room04.setNeighbor('east', 'room_05');
-  room04.addDoor('east', 'room_05');
+  room04.setNeighbor('north', 'l2_room_03');
+  room04.addDoor('north', 'l2_room_03');
+  room04.setNeighbor('east', 'l2_room_05');
+  room04.addDoor('east', 'l2_room_05');
 
-  room05.setNeighbor('west', 'room_04');
-  room05.addDoor('west', 'room_04');
-  room05.setNeighbor('south', 'room_06');
-  room05.addDoor('south', 'room_06');
+  room05.setNeighbor('west', 'l2_room_04');
+  room05.addDoor('west', 'l2_room_04');
+  room05.setNeighbor('south', 'l2_room_06');
+  room05.addDoor('south', 'l2_room_06');
 
-  room06.setNeighbor('north', 'room_05');
-  room06.addDoor('north', 'room_05');
-  room06.setNeighbor('east', 'room_07');
-  room06.addDoor('east', 'room_07');
+  room06.setNeighbor('north', 'l2_room_05');
+  room06.addDoor('north', 'l2_room_05');
+  room06.setNeighbor('east', 'l2_room_07');
+  room06.addDoor('east', 'l2_room_07');
 
-  room07.setNeighbor('west', 'room_06');
-  room07.addDoor('west', 'room_06');
+  room07.setNeighbor('west', 'l2_room_06');
+  room07.addDoor('west', 'l2_room_06');
 
   // Регистрируем все комнаты
   level
@@ -191,7 +191,17 @@ export function createLevel02(systems) {
     .addRoom(room05)
     .addRoom(room06)
     .addRoom(room07)
-    .setStartRoom('room_01');
+    .setStartRoom('l2_room_01');
+
+  level.minimapLayout = {
+    l2_room_01: { col: 0, row: 0 },
+    l2_room_02: { col: 1, row: 0 },
+    l2_room_03: { col: 2, row: 0 },
+    l2_room_04: { col: 2, row: 1 },
+    l2_room_05: { col: 3, row: 1 },
+    l2_room_06: { col: 3, row: 2 },
+    l2_room_07: { col: 4, row: 2 },
+  };
 
   return level;
 }

@@ -59,6 +59,28 @@ const { WeightSystem } = await import('../src/systems/WeightSystem.js');
 const { GateSystem, GATE_REQUIREMENTS } = await import('../src/systems/GateSystem.js');
 const { TOTAL_SKILLS } = await import('../src/data/skills.js');
 const { pickKaneLine } = await import('../src/data/dialogues/kane_dialogues.js');
+const { createLevel01 } = await import('../src/levels/Level01_RottenPeak.js');
+const { createLevel02 } = await import('../src/levels/Level02_Barracks.js');
+
+function makeLevelSystems() {
+  const bus = new EventBus();
+  return {
+    eventBus: bus,
+    skillTree: new SkillTree(bus),
+    fearSystem: new FearSystem(),
+    gateSystem: null,
+  };
+}
+
+function assertRoomGraphIntact(level) {
+  for (const [, room] of level.rooms) {
+    for (const door of room.doors) {
+      if (!level.rooms.has(door.toRoomId)) {
+        fail(`битая ссылка из ${room.id}: ${door.toRoomId}`);
+      }
+    }
+  }
+}
 
 // =========================================================================
 
@@ -370,6 +392,65 @@ describe('GateSystem', () => {
     const result = gate.sacrifice('agi_t4');
     expect(result).toBe(false);
     expect(tree.isActive('agi_t4')).toBe(true);
+  });
+});
+
+describe('Level01_RottenPeak', () => {
+  it('createLevel01 возвращает уровень с 5 комнатами', () => {
+    const level = createLevel01(makeLevelSystems());
+    expect(level.levelNumber).toBe(1);
+    expect(level.rooms.size).toBe(5);
+  });
+
+  it('стартовая комната — l1_room_01, мирная и зачищена', () => {
+    const level = createLevel01(makeLevelSystems());
+    expect(level.currentRoomId).toBe('l1_room_01');
+    const start = level.currentRoom;
+    expect(start.enemies.length).toBe(0);
+    expect(start.isCleared).toBe(true);
+  });
+
+  it('l1_room_04 имеет Врата с требованием choice', () => {
+    const level = createLevel01(makeLevelSystems());
+    const gateRoom = level.rooms.get('l1_room_04');
+    expect(gateRoom.gate !== null).toBe(true);
+    expect(gateRoom.gate.requirement).toBe('choice');
+    expect(gateRoom.gate.size).toBe('minor');
+  });
+
+  it('все двери ведут в существующие комнаты', () => {
+    const level = createLevel01(makeLevelSystems());
+    assertRoomGraphIntact(level);
+  });
+
+  it('минимап-раскладка определена для всех комнат', () => {
+    const level = createLevel01(makeLevelSystems());
+    expect(level.minimapLayout !== null).toBe(true);
+    for (const id of level.rooms.keys()) {
+      expect(level.minimapLayout[id] !== undefined).toBe(true);
+    }
+  });
+});
+
+describe('Level02_Barracks', () => {
+  it('createLevel02 возвращает уровень с 7 комнатами', () => {
+    const level = createLevel02(makeLevelSystems());
+    expect(level.levelNumber).toBe(2);
+    expect(level.rooms.size).toBe(7);
+    expect(level.currentRoomId).toBe('l2_room_01');
+  });
+
+  it('все двери ведут в существующие комнаты', () => {
+    const level = createLevel02(makeLevelSystems());
+    assertRoomGraphIntact(level);
+  });
+
+  it('минимап-раскладка определена для всех комнат', () => {
+    const level = createLevel02(makeLevelSystems());
+    expect(level.minimapLayout !== null).toBe(true);
+    for (const id of level.rooms.keys()) {
+      expect(level.minimapLayout[id] !== undefined).toBe(true);
+    }
   });
 });
 

@@ -34,7 +34,7 @@ async function main() {
 
     game.start();
 
-    console.log('[Epic Refund] Milestone 1 запущен: Уровень 2 «Казармы Тьмы»');
+    console.log('[Epic Refund] Milestone 2 запущен: Уровень 1 «Гнилой Пик»');
     console.log('[Epic Refund] WASD — движение · J — атака · K — тяжёлый/парирование · Shift — перекат · E — взаимодействие');
   } catch (err) {
     console.error('[Epic Refund] Ошибка инициализации:', err);

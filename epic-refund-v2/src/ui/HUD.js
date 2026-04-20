@@ -301,19 +301,14 @@ export class HUD {
     ctx.save();
     ctx.globalAlpha = alpha;
 
+    const layout = level.minimapLayout;
+    if (!layout) {
+      ctx.restore();
+      return;
+    }
+
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(x0 - 4, y0 - 4, 76, 50);
-
-    // Для Milestone 1 — простая линейная карта
-    const layout = {
-      room_01: { col: 0, row: 0 },
-      room_02: { col: 1, row: 0 },
-      room_03: { col: 2, row: 0 },
-      room_04: { col: 2, row: 1 },
-      room_05: { col: 3, row: 1 },
-      room_06: { col: 3, row: 2 },
-      room_07: { col: 4, row: 2 },
-    };
 
     const cellSize = 10;
     const gap = 2;
