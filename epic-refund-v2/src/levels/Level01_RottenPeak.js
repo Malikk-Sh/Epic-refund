@@ -1,13 +1,13 @@
 // Уровень 1: Гнилой Пик.
-// 5 комнат, 1 Врата Забвения (обучающие — требование CHOICE).
+// 6 комнат, 1 Врата Забвения (обучающие — требование CHOICE), 1 босс.
 //
-// Вступительный уровень до Казарм: знакомит игрока с боем и механикой Врат.
+// Вступительный уровень до Казарм: знакомит игрока с боем, Вратами и первым боссом.
 //
 // Структура (в плане):
 //
 //   [1-1 Лагерь] → [1-2 Тропа] → [1-3 Завал]
 //                                      ↓
-//                                    [1-4 Врата] → [1-5 Перевал]
+//                   [1-4 Врата] → [1-5 Перевал] → [1-6 Арена: Гомункул] → Казармы
 //
 // Тайлы:
 //   0 = пустота        1 = пол         2 = стена
@@ -19,6 +19,7 @@ import { Room } from './Room.js';
 import { BALANCE } from '../data/balance.js';
 import { Slime } from '../entities/enemies/Slime.js';
 import { Goblin } from '../entities/enemies/Goblin.js';
+import { Homunculus } from '../entities/enemies/bosses/Homunculus.js';
 import { GATE_REQUIREMENTS, GATE_SIZES } from '../systems/GateSystem.js';
 
 const TS = BALANCE.tileSize;
@@ -97,11 +98,17 @@ export function createLevel01(systems) {
   const g1 = room04.tilemap.tileToWorldCenter(4, 5);
   room04.addEnemy(new Goblin(g1.x, g1.y));
 
-  // === 1-5: Перевал (мирная, выход) ===
-  const r05map = makeRoom(['west']);
+  // === 1-5: Перевал (мирная, передышка перед боссом) ===
+  const r05map = makeRoom(['west', 'east']);
   const room05 = new Room('l1_room_05', r05map, TS);
   room05.openDoors();
   room05.isCleared = true;
+
+  // === 1-6: Арена — Гомункул, страж Казарм ===
+  const r06map = makeRoom(['west', 'east']);
+  const room06 = new Room('l1_room_06', r06map, TS);
+  const bossPos = room06.tilemap.tileToWorldCenter(10, 5);
+  room06.addEnemy(new Homunculus(bossPos.x, bossPos.y, systems.eventBus));
 
   // === Связи между комнатами ===
   room01.setNeighbor('east', 'l1_room_02');
@@ -124,6 +131,14 @@ export function createLevel01(systems) {
 
   room05.setNeighbor('west', 'l1_room_04');
   room05.addDoor('west', 'l1_room_04');
+  room05.setNeighbor('east', 'l1_room_06');
+  room05.addDoor('east', 'l1_room_06');
+
+  room06.setNeighbor('west', 'l1_room_05');
+  room06.addDoor('west', 'l1_room_05');
+  // Восточная дверь 1-6 — переход на Уровень 2 «Казармы Тьмы»,
+  // откроется после победы над боссом.
+  room06.addDoor('east', 'l2_room_01', 'west', 'level_02');
 
   level
     .addRoom(room01)
@@ -131,6 +146,7 @@ export function createLevel01(systems) {
     .addRoom(room03)
     .addRoom(room04)
     .addRoom(room05)
+    .addRoom(room06)
     .setStartRoom('l1_room_01');
 
   level.minimapLayout = {
@@ -139,6 +155,7 @@ export function createLevel01(systems) {
     l1_room_03: { col: 2, row: 0 },
     l1_room_04: { col: 3, row: 0 },
     l1_room_05: { col: 4, row: 0 },
+    l1_room_06: { col: 5, row: 0 },
   };
 
   return level;

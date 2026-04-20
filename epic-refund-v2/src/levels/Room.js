@@ -23,7 +23,8 @@ export class Room {
   doors = [];               // [{ tileCol, tileRow, direction, toRoomId, targetSpawnDir }]
 
   isCleared = false;        // Все враги побеждены?
-  isVisited = false;        // Игрок был здесь хоть раз (туман войны)
+  isVisited = false;        // Игрок был здесь хоть раз
+  isSeen = false;           // Туман войны: комната в поле зрения (посещена или соседняя с посещённой)
   isGateOpen = false;       // Врата пройдены?
 
   // Спавн для входа с каждого направления
@@ -53,7 +54,9 @@ export class Room {
 
   // Регистрирует дверь как точку перехода.
   // direction — с какой стороны эта дверь (север/юг/восток/запад).
-  addDoor(direction, toRoomId, targetSpawnDir = null) {
+  // toLevelKey — если задан, дверь межуровневая: переход сменит Level целиком
+  //              (см. LevelRegistry), а toRoomId указывает комнату в новом уровне.
+  addDoor(direction, toRoomId, targetSpawnDir = null, toLevelKey = null) {
     // Находим все тайлы DOOR_CLOSED и определяем, какие относятся к этой стороне
     // Для простоты: ищем ближайший к центру соответствующей стены
     const doorTiles = this.tilemap.findTiles(TILE.DOOR_CLOSED);
@@ -75,6 +78,7 @@ export class Room {
         tileRow: t.row,
         direction,
         toRoomId,
+        toLevelKey,
         targetSpawnDir: targetSpawnDir ?? this.#opposite(direction),
       });
     }

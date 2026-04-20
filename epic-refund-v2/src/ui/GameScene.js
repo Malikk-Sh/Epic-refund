@@ -8,7 +8,7 @@ import { GateUI } from '../ui/GateUI.js';
 import { Notifications } from '../ui/Notifications.js';
 import { WorldRenderer } from '../render/WorldRenderer.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
-import { createLevel01 } from '../levels/Level01_RottenPeak.js';
+import { createLevelByKey } from '../levels/LevelRegistry.js';
 import { MathUtils } from '../utils/MathUtils.js';
 import { BALANCE } from '../data/balance.js';
 import { KANE_DIALOGUES, pickKaneLine } from '../data/dialogues/kane_dialogues.js';
@@ -36,6 +36,8 @@ export class GameScene {
 
   // Флаг первых подсказок
   #firstGateApproached = false;
+  // Для одноразовой реплики при встрече с боссом (сбрасывается на входе в комнату)
+  #bossEncountered = false;
 
   constructor(deps) {
     this.#deps = deps;
@@ -52,22 +54,7 @@ export class GameScene {
       eventBus:     d.eventBus,
     });
 
-    // Level
-    this.#level = createLevel01({
-      eventBus:    d.eventBus,
-      skillTree:   d.skillTree,
-      fearSystem:  d.fearSystem,
-      gateSystem:  d.gateSystem,
-    });
-
-    // Ставим игрока на старт первой комнаты
-    const startRoom = this.#level.currentRoom;
-    const spawn = startRoom.getSpawnPosition();
-    this.#player.x = spawn.x;
-    this.#player.y = spawn.y;
-    startRoom.onPlayerEnter(this.#player, null, d.eventBus);
-
-    // Рендер и UI
+    // Рендер и UI (создаются один раз и переживают смену уровня)
     this.#worldRenderer = new WorldRenderer(d.renderer, d.camera, d.spriteRegistry);
     this.#hud           = new HUD(d.renderer, d.hudManager, d.skillTree, d.eventBus);
     this.#dialogue      = new DialogueSystem(d.renderer, d.eventBus);
@@ -75,19 +62,54 @@ export class GameScene {
     this.#notifications = new Notifications(d.renderer, d.camera);
     this.#particles     = new ParticleSystem(d.camera);
 
-    // Камера: фокус на комнате, мгновенное центрирование
-    this.#setupCameraForRoom();
-
     // События
     this.#setupEventHandlers();
 
-    // Входные уведомления
-    this.#notifications.show('Уровень 1: Гнилой Пик', 3.0, '#c8a96e');
+    // Стартовый уровень
+    this.#loadLevel('level_01');
+  }
+
+  // Загрузка/смена уровня.
+  // startRoomId — конкретная стартовая комната (для межуровневых переходов).
+  // fromDirection — с какой стороны игрок вошёл (для точки спавна).
+  #loadLevel(levelKey, startRoomId = null, fromDirection = null) {
+    const d = this.#deps;
+
+    this.#level = createLevelByKey(levelKey, {
+      eventBus:    d.eventBus,
+      skillTree:   d.skillTree,
+      fearSystem:  d.fearSystem,
+      gateSystem:  d.gateSystem,
+    });
+
+    if (startRoomId) this.#level.setStartRoom(startRoomId);
+
+    // Ставим игрока на точку спавна целевой комнаты
+    const startRoom = this.#level.currentRoom;
+    const spawn = startRoom.getSpawnPosition(fromDirection);
+    this.#player.x = spawn.x;
+    this.#player.y = spawn.y;
+    startRoom.onPlayerEnter(this.#player, fromDirection, d.eventBus);
+    this.#level.markRoomSeen(this.#level.currentRoomId);
+
+    this.#bossEncountered = false;
+    this.#setupCameraForRoom();
+    this.#announceLevel(levelKey);
+    this.#checkBossEncounter();
+  }
+
+  #announceLevel(levelKey) {
+    const d = this.#deps;
+    const INTROS = {
+      level_01: { title: 'Уровень 1: Гнилой Пик', line: KANE_DIALOGUES.environment.entered_rotten_peak[0] },
+      level_02: { title: 'Уровень 2: Казармы Тьмы', line: KANE_DIALOGUES.environment.entered_barracks[0] },
+    };
+    const intro = INTROS[levelKey];
+    if (!intro) return;
+
+    this.#notifications.show(intro.title, 3.0, '#c8a96e');
     setTimeout(() => {
-      d.eventBus.emit('player:speaks', {
-        line: KANE_DIALOGUES.environment.entered_rotten_peak[0],
-        duration: 4,
-      });
+      d.eventBus.emit('player:speaks', { line: intro.line, duration: 4 });
     }, 1500);
   }
 
@@ -206,6 +228,48 @@ export class GameScene {
     on('player:deathSave', () => {
       this.#notifications.show('Эхо уберегло от гибели!', 2.0, '#f1c40f');
     });
+
+    // === Босс ===
+    on('boss:phaseChange', ({ bossId, displayName, phase, totalPhases, name }) => {
+      const title = name
+        ? `${displayName}: ${name} (${phase}/${totalPhases})`
+        : `${displayName}: фаза ${phase}/${totalPhases}`;
+      this.#notifications.show(title, 2.5, '#d84a6a');
+      this.#deps.camera.shake(10);
+
+      const line = KANE_DIALOGUES.boss?.phase?.[bossId]?.[phase - 2];
+      if (line) {
+        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 3 }), 400);
+      }
+    });
+
+    on('boss:defeat', ({ bossId, displayName }) => {
+      this.#notifications.show(`${displayName} повержен`, 3.5, '#FFD700');
+      this.#deps.camera.shake(18);
+
+      const lines = KANE_DIALOGUES.boss?.defeat?.[bossId];
+      if (lines && lines.length) {
+        const line = lines[Math.floor(Math.random() * lines.length)];
+        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 4 }), 1200);
+      }
+    });
+  }
+
+  // Одноразовая реплика при первом входе в комнату с боссом.
+  #checkBossEncounter() {
+    if (this.#bossEncountered) return;
+    const room = this.#level.currentRoom;
+    for (const enemy of room.enemies) {
+      if (enemy.isBoss && enemy.isAlive) {
+        this.#bossEncountered = true;
+        const lines = KANE_DIALOGUES.boss?.encounter?.[enemy.typeName];
+        if (lines && lines.length) {
+          const line = lines[Math.floor(Math.random() * lines.length)];
+          this.#deps.eventBus.emit('player:speaks', { line, duration: 4 });
+        }
+        return;
+      }
+    }
   }
 
   // === ГЛАВНЫЙ ЦИКЛ ===
@@ -356,9 +420,15 @@ export class GameScene {
     const door = this.#level.checkRoomTransition(this.#player);
     if (!door) return;
 
-    // Переходим
+    if (door.toLevelKey) {
+      this.#loadLevel(door.toLevelKey, door.toRoomId, door.targetSpawnDir);
+      return;
+    }
+
     this.#level.transitionToRoom(door.toRoomId, door.targetSpawnDir, this.#player);
+    this.#bossEncountered = false;
     this.#setupCameraForRoom();
+    this.#checkBossEncounter();
   }
 
   // === ОТРИСОВКА ===
@@ -376,6 +446,7 @@ export class GameScene {
 
     // HUD
     this.#hud.draw(0.016, this.#player);
+    this.#hud.drawBossBar(room);
     this.#hud.drawMinimap(this.#level, this.#level.currentRoomId);
 
     // Подсказка взаимодействия
