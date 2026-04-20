@@ -46,15 +46,19 @@ export class Level {
   }
 
   // Проверяет: игрок переходит в соседнюю комнату?
-  // Возвращает объект перехода или null.
+  // Возвращает объект перехода или null. Межуровневые двери (door.toLevelKey)
+  // тоже возвращаются — их обрабатывает GameScene через LevelRegistry.
   checkRoomTransition(player) {
     const room = this.currentRoom;
     if (!room) return null;
 
     const door = room.checkDoorTrigger(player);
     if (!door) return null;
-    if (!this.rooms.has(door.toRoomId)) return null;
 
+    // Межуровневые двери валидируются в GameScene (проверка LevelRegistry)
+    if (door.toLevelKey) return door;
+
+    if (!this.rooms.has(door.toRoomId)) return null;
     return door;
   }
 

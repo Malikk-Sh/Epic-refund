@@ -53,7 +53,9 @@ export class Room {
 
   // Регистрирует дверь как точку перехода.
   // direction — с какой стороны эта дверь (север/юг/восток/запад).
-  addDoor(direction, toRoomId, targetSpawnDir = null) {
+  // toLevelKey — если задан, дверь межуровневая: переход сменит Level целиком
+  //              (см. LevelRegistry), а toRoomId указывает комнату в новом уровне.
+  addDoor(direction, toRoomId, targetSpawnDir = null, toLevelKey = null) {
     // Находим все тайлы DOOR_CLOSED и определяем, какие относятся к этой стороне
     // Для простоты: ищем ближайший к центру соответствующей стены
     const doorTiles = this.tilemap.findTiles(TILE.DOOR_CLOSED);
@@ -75,6 +77,7 @@ export class Room {
         tileRow: t.row,
         direction,
         toRoomId,
+        toLevelKey,
         targetSpawnDir: targetSpawnDir ?? this.#opposite(direction),
       });
     }

@@ -61,6 +61,7 @@ const { TOTAL_SKILLS } = await import('../src/data/skills.js');
 const { pickKaneLine } = await import('../src/data/dialogues/kane_dialogues.js');
 const { createLevel01 } = await import('../src/levels/Level01_RottenPeak.js');
 const { createLevel02 } = await import('../src/levels/Level02_Barracks.js');
+const { createLevelByKey, hasLevel, getLevelKeys } = await import('../src/levels/LevelRegistry.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -75,6 +76,8 @@ function makeLevelSystems() {
 function assertRoomGraphIntact(level) {
   for (const [, room] of level.rooms) {
     for (const door of room.doors) {
+      // Межуровневые двери валидируются отдельно через LevelRegistry
+      if (door.toLevelKey) continue;
       if (!level.rooms.has(door.toRoomId)) {
         fail(`битая ссылка из ${room.id}: ${door.toRoomId}`);
       }
@@ -451,6 +454,56 @@ describe('Level02_Barracks', () => {
     for (const id of level.rooms.keys()) {
       expect(level.minimapLayout[id] !== undefined).toBe(true);
     }
+  });
+});
+
+describe('LevelRegistry', () => {
+  it('хранит оба уровня', () => {
+    const keys = getLevelKeys();
+    expect(keys.includes('level_01')).toBe(true);
+    expect(keys.includes('level_02')).toBe(true);
+  });
+
+  it('hasLevel возвращает true для известных ключей', () => {
+    expect(hasLevel('level_01')).toBe(true);
+    expect(hasLevel('level_02')).toBe(true);
+    expect(hasLevel('level_99')).toBe(false);
+  });
+
+  it('createLevelByKey создаёт уровень по ключу', () => {
+    const l1 = createLevelByKey('level_01', makeLevelSystems());
+    expect(l1.levelNumber).toBe(1);
+    const l2 = createLevelByKey('level_02', makeLevelSystems());
+    expect(l2.levelNumber).toBe(2);
+  });
+
+  it('createLevelByKey бросает на неизвестный ключ', () => {
+    toThrow(() => createLevelByKey('level_99', makeLevelSystems()));
+  });
+});
+
+describe('Межуровневые переходы', () => {
+  it('Уровень 1 имеет дверь в Уровень 2', () => {
+    const level = createLevel01(makeLevelSystems());
+    const exit = level.rooms.get('l1_room_05');
+    const crossDoor = exit.doors.find(d => d.toLevelKey);
+    expect(crossDoor !== undefined).toBe(true);
+    expect(crossDoor.toLevelKey).toBe('level_02');
+    expect(crossDoor.toRoomId).toBe('l2_room_01');
+  });
+
+  it('целевая комната межуровневой двери существует в LevelRegistry', () => {
+    const l1 = createLevel01(makeLevelSystems());
+    for (const [, room] of l1.rooms) {
+      for (const door of room.doors) {
+        if (!door.toLevelKey) continue;
+        const target = createLevelByKey(door.toLevelKey, makeLevelSystems());
+        if (!target.rooms.has(door.toRoomId)) {
+          fail(`${room.id} → ${door.toLevelKey}/${door.toRoomId}: не найдено`);
+        }
+      }
+    }
+    expect(true).toBe(true);
   });
 });
 

@@ -8,7 +8,7 @@ import { GateUI } from '../ui/GateUI.js';
 import { Notifications } from '../ui/Notifications.js';
 import { WorldRenderer } from '../render/WorldRenderer.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
-import { createLevel01 } from '../levels/Level01_RottenPeak.js';
+import { createLevelByKey } from '../levels/LevelRegistry.js';
 import { MathUtils } from '../utils/MathUtils.js';
 import { BALANCE } from '../data/balance.js';
 import { KANE_DIALOGUES, pickKaneLine } from '../data/dialogues/kane_dialogues.js';
@@ -52,22 +52,7 @@ export class GameScene {
       eventBus:     d.eventBus,
     });
 
-    // Level
-    this.#level = createLevel01({
-      eventBus:    d.eventBus,
-      skillTree:   d.skillTree,
-      fearSystem:  d.fearSystem,
-      gateSystem:  d.gateSystem,
-    });
-
-    // Ставим игрока на старт первой комнаты
-    const startRoom = this.#level.currentRoom;
-    const spawn = startRoom.getSpawnPosition();
-    this.#player.x = spawn.x;
-    this.#player.y = spawn.y;
-    startRoom.onPlayerEnter(this.#player, null, d.eventBus);
-
-    // Рендер и UI
+    // Рендер и UI (создаются один раз и переживают смену уровня)
     this.#worldRenderer = new WorldRenderer(d.renderer, d.camera, d.spriteRegistry);
     this.#hud           = new HUD(d.renderer, d.hudManager, d.skillTree, d.eventBus);
     this.#dialogue      = new DialogueSystem(d.renderer, d.eventBus);
@@ -75,19 +60,51 @@ export class GameScene {
     this.#notifications = new Notifications(d.renderer, d.camera);
     this.#particles     = new ParticleSystem(d.camera);
 
-    // Камера: фокус на комнате, мгновенное центрирование
-    this.#setupCameraForRoom();
-
     // События
     this.#setupEventHandlers();
 
-    // Входные уведомления
-    this.#notifications.show('Уровень 1: Гнилой Пик', 3.0, '#c8a96e');
+    // Стартовый уровень
+    this.#loadLevel('level_01');
+  }
+
+  // Загрузка/смена уровня.
+  // startRoomId — конкретная стартовая комната (для межуровневых переходов).
+  // fromDirection — с какой стороны игрок вошёл (для точки спавна).
+  #loadLevel(levelKey, startRoomId = null, fromDirection = null) {
+    const d = this.#deps;
+
+    this.#level = createLevelByKey(levelKey, {
+      eventBus:    d.eventBus,
+      skillTree:   d.skillTree,
+      fearSystem:  d.fearSystem,
+      gateSystem:  d.gateSystem,
+    });
+
+    if (startRoomId) this.#level.setStartRoom(startRoomId);
+
+    // Ставим игрока на точку спавна целевой комнаты
+    const startRoom = this.#level.currentRoom;
+    const spawn = startRoom.getSpawnPosition(fromDirection);
+    this.#player.x = spawn.x;
+    this.#player.y = spawn.y;
+    startRoom.onPlayerEnter(this.#player, fromDirection, d.eventBus);
+
+    this.#setupCameraForRoom();
+    this.#announceLevel(levelKey);
+  }
+
+  #announceLevel(levelKey) {
+    const d = this.#deps;
+    const INTROS = {
+      level_01: { title: 'Уровень 1: Гнилой Пик', line: KANE_DIALOGUES.environment.entered_rotten_peak[0] },
+      level_02: { title: 'Уровень 2: Казармы Тьмы', line: KANE_DIALOGUES.environment.entered_barracks[0] },
+    };
+    const intro = INTROS[levelKey];
+    if (!intro) return;
+
+    this.#notifications.show(intro.title, 3.0, '#c8a96e');
     setTimeout(() => {
-      d.eventBus.emit('player:speaks', {
-        line: KANE_DIALOGUES.environment.entered_rotten_peak[0],
-        duration: 4,
-      });
+      d.eventBus.emit('player:speaks', { line: intro.line, duration: 4 });
     }, 1500);
   }
 
@@ -356,7 +373,11 @@ export class GameScene {
     const door = this.#level.checkRoomTransition(this.#player);
     if (!door) return;
 
-    // Переходим
+    if (door.toLevelKey) {
+      this.#loadLevel(door.toLevelKey, door.toRoomId, door.targetSpawnDir);
+      return;
+    }
+
     this.#level.transitionToRoom(door.toRoomId, door.targetSpawnDir, this.#player);
     this.#setupCameraForRoom();
   }

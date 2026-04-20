@@ -97,8 +97,8 @@ export function createLevel01(systems) {
   const g1 = room04.tilemap.tileToWorldCenter(4, 5);
   room04.addEnemy(new Goblin(g1.x, g1.y));
 
-  // === 1-5: Перевал (мирная, выход) ===
-  const r05map = makeRoom(['west']);
+  // === 1-5: Перевал (мирная, выход в Казармы) ===
+  const r05map = makeRoom(['west', 'east']);
   const room05 = new Room('l1_room_05', r05map, TS);
   room05.openDoors();
   room05.isCleared = true;
@@ -124,6 +124,8 @@ export function createLevel01(systems) {
 
   room05.setNeighbor('west', 'l1_room_04');
   room05.addDoor('west', 'l1_room_04');
+  // Восточная дверь 1-5 — переход на Уровень 2 «Казармы Тьмы»
+  room05.addDoor('east', 'l2_room_01', 'west', 'level_02');
 
   level
     .addRoom(room01)
