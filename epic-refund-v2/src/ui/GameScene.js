@@ -88,6 +88,7 @@ export class GameScene {
     this.#player.x = spawn.x;
     this.#player.y = spawn.y;
     startRoom.onPlayerEnter(this.#player, fromDirection, d.eventBus);
+    this.#level.markRoomSeen(this.#level.currentRoomId);
 
     this.#setupCameraForRoom();
     this.#announceLevel(levelKey);

@@ -482,6 +482,44 @@ describe('LevelRegistry', () => {
   });
 });
 
+describe('Туман войны', () => {
+  it('все комнаты изначально невидимы', () => {
+    const level = createLevel01(makeLevelSystems());
+    for (const [, room] of level.rooms) {
+      expect(room.isSeen).toBe(false);
+      expect(room.isVisited).toBe(false);
+    }
+  });
+
+  it('markRoomSeen помечает саму комнату и соседей', () => {
+    const level = createLevel01(makeLevelSystems());
+    level.markRoomSeen('l1_room_02');
+    expect(level.rooms.get('l1_room_02').isSeen).toBe(true);
+    expect(level.rooms.get('l1_room_01').isSeen).toBe(true);  // западный сосед
+    expect(level.rooms.get('l1_room_03').isSeen).toBe(true);  // восточный сосед
+    expect(level.rooms.get('l1_room_04').isSeen).toBe(false); // не соседняя
+  });
+
+  it('isSeen не перекрывает isVisited при обратном переходе', () => {
+    const level = createLevel01(makeLevelSystems());
+    const r02 = level.rooms.get('l1_room_02');
+    r02.isVisited = true;
+    level.markRoomSeen('l1_room_03');  // 02 остаётся с isVisited=true
+    expect(r02.isVisited).toBe(true);
+    expect(r02.isSeen).toBe(true);
+  });
+
+  it('transitionToRoom помечает новую комнату и её соседей', () => {
+    const level = createLevel01(makeLevelSystems());
+    const fakePlayer = { x: 0, y: 0, onRoomEnter: () => {} };
+    level.transitionToRoom('l1_room_02', 'west', fakePlayer);
+    expect(level.rooms.get('l1_room_02').isSeen).toBe(true);
+    expect(level.rooms.get('l1_room_02').isVisited).toBe(true);
+    expect(level.rooms.get('l1_room_03').isSeen).toBe(true);
+    expect(level.rooms.get('l1_room_03').isVisited).toBe(false);
+  });
+});
+
 describe('Межуровневые переходы', () => {
   it('Уровень 1 имеет дверь в Уровень 2', () => {
     const level = createLevel01(makeLevelSystems());

@@ -23,7 +23,8 @@ export class Room {
   doors = [];               // [{ tileCol, tileRow, direction, toRoomId, targetSpawnDir }]
 
   isCleared = false;        // Все враги побеждены?
-  isVisited = false;        // Игрок был здесь хоть раз (туман войны)
+  isVisited = false;        // Игрок был здесь хоть раз
+  isSeen = false;           // Туман войны: комната в поле зрения (посещена или соседняя с посещённой)
   isGateOpen = false;       // Врата пройдены?
 
   // Спавн для входа с каждого направления

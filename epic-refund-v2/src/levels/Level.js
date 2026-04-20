@@ -75,7 +75,20 @@ export class Level {
     player.y = spawn.y;
 
     newRoom.onPlayerEnter(player, fromDirection, this.#eventBus);
+    this.markRoomSeen(toRoomId);
     return true;
+  }
+
+  // Туман войны: помечает комнату и её соседей как "видимые" на мини-карте.
+  // Соседи становятся silhouette (isSeen=true, isVisited=false).
+  markRoomSeen(roomId) {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.isSeen = true;
+    for (const neighborId of Object.values(room.neighbors)) {
+      const neighbor = this.rooms.get(neighborId);
+      if (neighbor) neighbor.isSeen = true;
+    }
   }
 
   // Размеры текущей комнаты — для камеры

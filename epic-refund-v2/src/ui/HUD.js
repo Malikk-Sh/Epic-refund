@@ -319,7 +319,15 @@ export class HUD {
       const cx = x0 + pos.col * (cellSize + gap);
       const cy = y0 + pos.row * (cellSize + gap);
 
-      if (!room.isVisited) continue;
+      // Туман войны: полностью неизвестные комнаты скрыты
+      if (!room.isSeen) continue;
+
+      // Silhouette: соседние с посещёнными, но ещё не посещённые
+      if (!room.isVisited) {
+        ctx.fillStyle = 'rgba(120,120,120,0.35)';
+        ctx.fillRect(cx, cy, cellSize, cellSize);
+        continue;
+      }
 
       let color = '#444';
       if (room.isCleared) color = '#666';
