@@ -36,6 +36,8 @@ export class GameScene {
 
   // Флаг первых подсказок
   #firstGateApproached = false;
+  // Для одноразовой реплики при встрече с боссом (сбрасывается на входе в комнату)
+  #bossEncountered = false;
 
   constructor(deps) {
     this.#deps = deps;
@@ -90,8 +92,10 @@ export class GameScene {
     startRoom.onPlayerEnter(this.#player, fromDirection, d.eventBus);
     this.#level.markRoomSeen(this.#level.currentRoomId);
 
+    this.#bossEncountered = false;
     this.#setupCameraForRoom();
     this.#announceLevel(levelKey);
+    this.#checkBossEncounter();
   }
 
   #announceLevel(levelKey) {
@@ -224,6 +228,48 @@ export class GameScene {
     on('player:deathSave', () => {
       this.#notifications.show('Эхо уберегло от гибели!', 2.0, '#f1c40f');
     });
+
+    // === Босс ===
+    on('boss:phaseChange', ({ bossId, displayName, phase, totalPhases, name }) => {
+      const title = name
+        ? `${displayName}: ${name} (${phase}/${totalPhases})`
+        : `${displayName}: фаза ${phase}/${totalPhases}`;
+      this.#notifications.show(title, 2.5, '#d84a6a');
+      this.#deps.camera.shake(10);
+
+      const line = KANE_DIALOGUES.boss?.phase?.[bossId]?.[phase - 2];
+      if (line) {
+        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 3 }), 400);
+      }
+    });
+
+    on('boss:defeat', ({ bossId, displayName }) => {
+      this.#notifications.show(`${displayName} повержен`, 3.5, '#FFD700');
+      this.#deps.camera.shake(18);
+
+      const lines = KANE_DIALOGUES.boss?.defeat?.[bossId];
+      if (lines && lines.length) {
+        const line = lines[Math.floor(Math.random() * lines.length)];
+        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 4 }), 1200);
+      }
+    });
+  }
+
+  // Одноразовая реплика при первом входе в комнату с боссом.
+  #checkBossEncounter() {
+    if (this.#bossEncountered) return;
+    const room = this.#level.currentRoom;
+    for (const enemy of room.enemies) {
+      if (enemy.isBoss && enemy.isAlive) {
+        this.#bossEncountered = true;
+        const lines = KANE_DIALOGUES.boss?.encounter?.[enemy.typeName];
+        if (lines && lines.length) {
+          const line = lines[Math.floor(Math.random() * lines.length)];
+          this.#deps.eventBus.emit('player:speaks', { line, duration: 4 });
+        }
+        return;
+      }
+    }
   }
 
   // === ГЛАВНЫЙ ЦИКЛ ===
@@ -380,7 +426,9 @@ export class GameScene {
     }
 
     this.#level.transitionToRoom(door.toRoomId, door.targetSpawnDir, this.#player);
+    this.#bossEncountered = false;
     this.#setupCameraForRoom();
+    this.#checkBossEncounter();
   }
 
   // === ОТРИСОВКА ===
@@ -398,6 +446,7 @@ export class GameScene {
 
     // HUD
     this.#hud.draw(0.016, this.#player);
+    this.#hud.drawBossBar(room);
     this.#hud.drawMinimap(this.#level, this.#level.currentRoomId);
 
     // Подсказка взаимодействия

@@ -287,6 +287,53 @@ export class HUD {
     ctx.fillText(text, x, y);
   }
 
+  // === БОСС ===
+
+  // Рисует полосу HP и название фазы для живого босса в текущей комнате.
+  // Не подчиняется деградации HUD — босса видно всегда.
+  drawBossBar(room) {
+    if (!room) return;
+    let boss = null;
+    for (const enemy of room.enemies) {
+      if (enemy.isBoss && enemy.isAlive) { boss = enemy; break; }
+    }
+    if (!boss) return;
+
+    const ctx = this.#renderer.ctx;
+    const W = this.#renderer.logicalWidth;
+    const H = this.#renderer.logicalHeight;
+
+    const barW = Math.min(220, W - 40);
+    const barH = 9;
+    const x = Math.round((W - barW) / 2);
+    const y = H - 50;
+
+    ctx.save();
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(x - 2, y - 2, barW + 4, barH + 4);
+
+    ctx.fillStyle = '#180818';
+    ctx.fillRect(x, y, barW, barH);
+
+    const pct = Math.max(0, boss.hp / boss.maxHP);
+    ctx.fillStyle = '#8a2a4a';
+    ctx.fillRect(x, y, Math.round(barW * pct), barH);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillRect(x, y, Math.round(barW * pct), 2);
+
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#f0d090';
+    const phase = boss.phases?.[boss.currentPhase]?.name;
+    const label = phase ? `${boss.displayName} — ${phase}` : boss.displayName;
+    ctx.fillText(label, W / 2, y - 3);
+
+    ctx.restore();
+  }
+
   // === МИНИ-КАРТА КОМНАТ ===
 
   drawMinimap(level, currentRoomId) {

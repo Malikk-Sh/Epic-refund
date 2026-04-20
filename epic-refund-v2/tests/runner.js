@@ -62,6 +62,7 @@ const { pickKaneLine } = await import('../src/data/dialogues/kane_dialogues.js')
 const { createLevel01 } = await import('../src/levels/Level01_RottenPeak.js');
 const { createLevel02 } = await import('../src/levels/Level02_Barracks.js');
 const { createLevelByKey, hasLevel, getLevelKeys } = await import('../src/levels/LevelRegistry.js');
+const { Homunculus } = await import('../src/entities/enemies/bosses/Homunculus.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -399,10 +400,19 @@ describe('GateSystem', () => {
 });
 
 describe('Level01_RottenPeak', () => {
-  it('createLevel01 возвращает уровень с 5 комнатами', () => {
+  it('createLevel01 возвращает уровень с 6 комнатами', () => {
     const level = createLevel01(makeLevelSystems());
     expect(level.levelNumber).toBe(1);
-    expect(level.rooms.size).toBe(5);
+    expect(level.rooms.size).toBe(6);
+  });
+
+  it('l1_room_06 — арена с боссом Гомункулом', () => {
+    const level = createLevel01(makeLevelSystems());
+    const arena = level.rooms.get('l1_room_06');
+    expect(arena !== undefined).toBe(true);
+    const boss = arena.enemies.find(e => e.isBoss);
+    expect(boss !== undefined).toBe(true);
+    expect(boss.typeName).toBe('homunculus');
   });
 
   it('стартовая комната — l1_room_01, мирная и зачищена', () => {
@@ -521,9 +531,9 @@ describe('Туман войны', () => {
 });
 
 describe('Межуровневые переходы', () => {
-  it('Уровень 1 имеет дверь в Уровень 2', () => {
+  it('Уровень 1 имеет дверь в Уровень 2 (из арены босса)', () => {
     const level = createLevel01(makeLevelSystems());
-    const exit = level.rooms.get('l1_room_05');
+    const exit = level.rooms.get('l1_room_06');
     const crossDoor = exit.doors.find(d => d.toLevelKey);
     expect(crossDoor !== undefined).toBe(true);
     expect(crossDoor.toLevelKey).toBe('level_02');
@@ -542,6 +552,76 @@ describe('Межуровневые переходы', () => {
       }
     }
     expect(true).toBe(true);
+  });
+});
+
+describe('Boss (Homunculus)', () => {
+  it('стартует в фазе 0 с полным HP и правильными статами', () => {
+    const boss = new Homunculus(0, 0, new EventBus());
+    expect(boss.isBoss).toBe(true);
+    expect(boss.currentPhase).toBe(0);
+    expect(boss.hp).toBe(120);
+    expect(boss.maxHP).toBe(120);
+    expect(boss.typeName).toBe('homunculus');
+  });
+
+  it('переходит во 2-ю фазу при HP ниже 66%', () => {
+    const bus = new EventBus();
+    let evt = null;
+    bus.on('boss:phaseChange', d => evt = d);
+
+    const boss = new Homunculus(0, 0, bus);
+    // Симулируем урон до 65%
+    boss.hp = Math.round(boss.maxHP * 0.65);
+
+    // Фаза проверяется внутри update(); вызываем только участок перехода
+    // через update-цепочку. Для изоляции теста мокаем player/fearSystem/tilemap.
+    const fakePlayer = { x: 0, y: 0, isAlive: true };
+    const fakeFear   = { calculateThreat: () => 0, evaluateBehavior: () => 'normal' };
+    const fakeTree   = { getActiveSkillCount: () => 20 };
+    const fakeTilemap = { moveEntity: (e, dx, dy) => { e.x += dx; e.y += dy; } };
+    boss.update(0.016, fakePlayer, fakeFear, fakeTree, fakeTilemap);
+
+    expect(boss.currentPhase).toBe(1);
+    expect(evt !== null).toBe(true);
+    expect(evt.phase).toBe(2);
+    expect(evt.totalPhases).toBe(3);
+    expect(boss.moveSpeed).toBe(65);   // статы 2-й фазы применились
+    expect(boss.damage).toBe(10);
+  });
+
+  it('переходит в 3-ю фазу при HP ниже 33%', () => {
+    const bus = new EventBus();
+    const boss = new Homunculus(0, 0, bus);
+    boss.hp = Math.round(boss.maxHP * 0.3);
+    const fakePlayer = { x: 0, y: 0, isAlive: true };
+    const fakeFear   = { calculateThreat: () => 0, evaluateBehavior: () => 'normal' };
+    const fakeTree   = { getActiveSkillCount: () => 20 };
+    const fakeTilemap = { moveEntity: (e, dx, dy) => { e.x += dx; e.y += dy; } };
+    boss.update(0.016, fakePlayer, fakeFear, fakeTree, fakeTilemap);
+
+    expect(boss.currentPhase).toBe(2);
+    expect(boss.armor).toBe(0);        // броня снята в «Распаде»
+    expect(boss.damage).toBe(14);
+  });
+
+  it('эмитит boss:defeat один раз при смерти', () => {
+    const bus = new EventBus();
+    let defeats = 0;
+    bus.on('boss:defeat', () => defeats++);
+
+    const boss = new Homunculus(0, 0, bus);
+    const fakePlayer = { x: 0, y: 0, isAlive: true };
+    const fakeFear   = { calculateThreat: () => 0, evaluateBehavior: () => 'normal' };
+    const fakeTree   = { getActiveSkillCount: () => 20 };
+    const fakeTilemap = { moveEntity: (e, dx, dy) => { e.x += dx; e.y += dy; } };
+
+    boss.takeDamage(999, 0, 0);
+    expect(boss.isAlive).toBe(false);
+    boss.update(0.016, fakePlayer, fakeFear, fakeTree, fakeTilemap);
+    boss.update(0.016, fakePlayer, fakeFear, fakeTree, fakeTilemap);
+
+    expect(defeats).toBe(1);
   });
 });
 
