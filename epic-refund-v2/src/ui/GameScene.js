@@ -8,7 +8,7 @@ import { GateUI } from '../ui/GateUI.js';
 import { Notifications } from '../ui/Notifications.js';
 import { WorldRenderer } from '../render/WorldRenderer.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
-import { createLevel02 } from '../levels/Level02_Barracks.js';
+import { createLevel01 } from '../levels/Level01_RottenPeak.js';
 import { MathUtils } from '../utils/MathUtils.js';
 import { BALANCE } from '../data/balance.js';
 import { KANE_DIALOGUES, pickKaneLine } from '../data/dialogues/kane_dialogues.js';
@@ -53,7 +53,7 @@ export class GameScene {
     });
 
     // Level
-    this.#level = createLevel02({
+    this.#level = createLevel01({
       eventBus:    d.eventBus,
       skillTree:   d.skillTree,
       fearSystem:  d.fearSystem,
@@ -82,10 +82,10 @@ export class GameScene {
     this.#setupEventHandlers();
 
     // Входные уведомления
-    this.#notifications.show('Уровень 2: Казармы Тьмы', 3.0, '#c8a96e');
+    this.#notifications.show('Уровень 1: Гнилой Пик', 3.0, '#c8a96e');
     setTimeout(() => {
       d.eventBus.emit('player:speaks', {
-        line: KANE_DIALOGUES.environment.entered_barracks[0],
+        line: KANE_DIALOGUES.environment.entered_rotten_peak[0],
         duration: 4,
       });
     }, 1500);

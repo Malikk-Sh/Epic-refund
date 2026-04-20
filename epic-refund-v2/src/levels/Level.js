@@ -6,6 +6,10 @@ export class Level {
   rooms = new Map();       // roomId → Room
   currentRoomId = null;
 
+  // { roomId: { col, row } } — раскладка для мини-карты в HUD.
+  // Null = мини-карта не рисуется.
+  minimapLayout = null;
+
   #eventBus;
   #skillTree;
   #fearSystem;
