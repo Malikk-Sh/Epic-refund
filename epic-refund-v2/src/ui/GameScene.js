@@ -93,7 +93,7 @@ export class GameScene {
     this.#level.markRoomSeen(this.#level.currentRoomId);
 
     this.#bossEncountered = false;
-    this.#setupCameraForRoom();
+    this.#setupCameraForRoom(fromDirection);
     this.#announceLevel(levelKey);
     this.#checkBossEncounter();
   }
@@ -113,11 +113,28 @@ export class GameScene {
     }, 1500);
   }
 
-  #setupCameraForRoom() {
+  // fromDirection — сторона, с которой вошёл игрок (для анимации камеры).
+  // null = первая загрузка, мгновенный snap без анимации.
+  #setupCameraForRoom(fromDirection = null) {
     const d = this.#deps;
     const bounds = this.#level.getCurrentRoomBounds();
     d.camera.setWorldBounds(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY);
     d.camera.snapTo(this.#player);
+
+    if (!fromDirection) return;
+
+    // Смещаем стартовую позицию камеры на одну комнату в сторону входа.
+    // Естественный lerp «довезёт» её к правильной позиции — это и есть анимация.
+    const ROOM_W = bounds.maxX - bounds.minX;
+    const ROOM_H = bounds.maxY - bounds.minY;
+    const offsets = {
+      east:  { dx:  ROOM_W, dy: 0 },
+      west:  { dx: -ROOM_W, dy: 0 },
+      south: { dx: 0, dy:  ROOM_H },
+      north: { dx: 0, dy: -ROOM_H },
+    };
+    const off = offsets[fromDirection];
+    if (off) d.camera.startTransition(off.dx, off.dy);
   }
 
   #setupEventHandlers() {
@@ -427,7 +444,7 @@ export class GameScene {
 
     this.#level.transitionToRoom(door.toRoomId, door.targetSpawnDir, this.#player);
     this.#bossEncountered = false;
-    this.#setupCameraForRoom();
+    this.#setupCameraForRoom(door.targetSpawnDir);
     this.#checkBossEncounter();
   }
 

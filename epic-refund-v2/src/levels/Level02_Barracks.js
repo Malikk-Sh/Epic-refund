@@ -72,9 +72,7 @@ export function createLevel02(systems) {
   const griblPos = room01.tilemap.tileToWorldCenter(11, 7);
   room01.addNPC(new Gribl(griblPos.x, griblPos.y, systems.skillTree));
 
-  // В комнате нет врагов — двери сразу открыты
-  room01.openDoors();
-  room01.isCleared = true;
+  // Двери откроются после регистрации ниже
 
   // === 2-2: Коридор — первый слабый противник ===
   const r02map = makeRoom(['west', 'east']);
@@ -146,9 +144,7 @@ export function createLevel02(systems) {
   const r07map = makeRoom(['west']);
   // Яркий тайл "выход" — просто визуально, триггер делается через проверку координат
   const room07 = new Room('l2_room_07', r07map, TS);
-  // Без врагов, без Врат — мирная комната
-  room07.openDoors();
-  room07.isCleared = true;
+  // Без врагов, без Врат — мирная комната. Двери откроются после регистрации ниже.
 
   // === Связи между комнатами ===
   room01.setNeighbor('east', 'l2_room_02');
@@ -181,6 +177,10 @@ export function createLevel02(systems) {
 
   room07.setNeighbor('west', 'l2_room_06');
   room07.addDoor('west', 'l2_room_06');
+
+  // Открываем двери предзачищенных комнат ПОСЛЕ регистрации всех дверей
+  room01.openDoors(); room01.isCleared = true;
+  room07.openDoors(); room07.isCleared = true;
 
   // Регистрируем все комнаты
   level

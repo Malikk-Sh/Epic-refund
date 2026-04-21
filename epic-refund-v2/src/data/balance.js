@@ -60,6 +60,17 @@ export const BALANCE = {
     hideCompassAt: 15,
     hideAllAt: 2,
     fadeDuration: 2.0,
+    // Skill panel (debug)
+    skillIconSize: 22,        // пикс, сторона квадрата навыка
+    skillIconGap: 3,          // пикс между иконками в группе
+    skillGroupGap: 8,         // пикс между ветками
+    // Bars
+    hpBarW: 160, hpBarH: 14,
+    manaBarW: 120, manaBarH: 8,
+    staminaBarW: 120, staminaBarH: 6,
+    // Minimap
+    minimapCellSize: 12,
+    minimapCellGap: 2,
   },
 
   weight: {
