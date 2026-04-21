@@ -21,6 +21,12 @@ const KEY_MAP = {
   KeyT: 'skillTree',
   Escape: 'pause',
 
+  // Выборы в диалогах
+  Digit1: 'choice1',
+  Digit2: 'choice2',
+  Digit3: 'choice3',
+  Digit4: 'choice4',
+
   // Debug
   F1: 'debug_toggle',
   F3: 'debug_hitbox',

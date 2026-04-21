@@ -155,7 +155,7 @@ export function createLevel03(systems) {
   room07.addEnemy(new Skeleton(sk07.x, sk07.y));
 
   // === 3-8: Выход (мирная) ===
-  const r08map = makeRoom(['north']);
+  const r08map = makeRoom(['north', 'east']);
   const room08 = new Room('l3_room_08', r08map, TS);
 
   // === Связи между комнатами ===
@@ -194,6 +194,7 @@ export function createLevel03(systems) {
 
   room08.setNeighbor('north', 'l3_room_07');
   room08.addDoor('north', 'l3_room_07');
+  room08.addDoor('east', 'l4_room_01', 'west', 'level_04');
 
   // Открываем мирные комнаты после регистрации всех дверей
   room01.openDoors(); room01.isCleared = true;
