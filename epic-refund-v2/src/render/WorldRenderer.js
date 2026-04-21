@@ -62,11 +62,11 @@ export class WorldRenderer {
   #drawTilemap(ctx, tm, cam) {
     const ts = tm.tileSize;
 
-    // Определяем видимый диапазон тайлов (culling)
+    // Определяем видимый диапазон тайлов (culling с учётом zoom)
     const startCol = Math.max(0, Math.floor(cam.x / ts));
-    const endCol   = Math.min(tm.cols - 1, Math.floor((cam.x + cam.viewWidth) / ts));
+    const endCol   = Math.min(tm.cols - 1, Math.floor((cam.x + cam.visibleWorldWidth)  / ts));
     const startRow = Math.max(0, Math.floor(cam.y / ts));
-    const endRow   = Math.min(tm.rows - 1, Math.floor((cam.y + cam.viewHeight) / ts));
+    const endRow   = Math.min(tm.rows - 1, Math.floor((cam.y + cam.visibleWorldHeight) / ts));
 
     for (let r = startRow; r <= endRow; r++) {
       for (let c = startCol; c <= endCol; c++) {
@@ -75,40 +75,44 @@ export class WorldRenderer {
         const worldY = r * ts;
         const screen = cam.worldToScreen(worldX, worldY);
 
+        // Размер тайла в экранных пикселях с учётом zoom
+        const sw = ts * cam.zoom;
+        const sh = ts * cam.zoom;
+
         const color = TILE_COLORS[t] ?? '#000';
         ctx.fillStyle = color;
-        ctx.fillRect(screen.x, screen.y, ts, ts);
+        ctx.fillRect(screen.x, screen.y, sw, sh);
 
         // Сетка пола (вариация для читаемости)
         if (t === TILE.FLOOR && (c + r) % 2 === 0) {
           ctx.fillStyle = FLOOR_VAR_COLOR;
-          ctx.fillRect(screen.x, screen.y, ts, ts);
+          ctx.fillRect(screen.x, screen.y, sw, sh);
         }
 
         // Детализация стен
         if (t === TILE.WALL) {
           // Верхний хайлайт
           ctx.fillStyle = '#5c4a35';
-          ctx.fillRect(screen.x, screen.y, ts, 2);
+          ctx.fillRect(screen.x, screen.y, sw, 3);
           // Нижняя тень
           ctx.fillStyle = '#2e2215';
-          ctx.fillRect(screen.x, screen.y + ts - 2, ts, 2);
+          ctx.fillRect(screen.x, screen.y + sh - 3, sw, 3);
         }
 
         // Детализация двери
         if (t === TILE.DOOR_CLOSED) {
           ctx.strokeStyle = '#8a6a3a';
           ctx.lineWidth = 1;
-          ctx.strokeRect(screen.x + 1, screen.y + 1, ts - 2, ts - 2);
+          ctx.strokeRect(screen.x + 1, screen.y + 1, sw - 2, sh - 2);
           // Ручка
           ctx.fillStyle = '#d8b868';
-          ctx.fillRect(screen.x + ts / 2 - 1, screen.y + ts / 2 - 1, 2, 2);
+          ctx.fillRect(screen.x + sw / 2 - 2, screen.y + sh / 2 - 2, 4, 4);
         }
 
         if (t === TILE.DOOR_OPEN) {
           // Тёмная пустота — проём
           ctx.fillStyle = '#050402';
-          ctx.fillRect(screen.x + 2, screen.y, ts - 4, ts);
+          ctx.fillRect(screen.x + 3, screen.y, sw - 6, sh);
         }
       }
     }

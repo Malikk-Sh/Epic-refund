@@ -58,8 +58,6 @@ export function createLevel01(systems) {
   // Костёр-препятствие по центру для атмосферы
   r01map[5][7] = 2;
   const room01 = new Room('l1_room_01', r01map, TS);
-  room01.openDoors();
-  room01.isCleared = true;
 
   // === 1-2: Горная тропа — первый враг ===
   const r02map = makeRoom(['west', 'east']);
@@ -101,8 +99,6 @@ export function createLevel01(systems) {
   // === 1-5: Перевал (мирная, передышка перед боссом) ===
   const r05map = makeRoom(['west', 'east']);
   const room05 = new Room('l1_room_05', r05map, TS);
-  room05.openDoors();
-  room05.isCleared = true;
 
   // === 1-6: Арена — Гомункул, страж Казарм ===
   const r06map = makeRoom(['west', 'east']);
@@ -139,6 +135,10 @@ export function createLevel01(systems) {
   // Восточная дверь 1-6 — переход на Уровень 2 «Казармы Тьмы»,
   // откроется после победы над боссом.
   room06.addDoor('east', 'l2_room_01', 'west', 'level_02');
+
+  // Открываем двери предзачищенных комнат ПОСЛЕ регистрации всех дверей
+  room01.openDoors(); room01.isCleared = true;
+  room05.openDoors(); room05.isCleared = true;
 
   level
     .addRoom(room01)
