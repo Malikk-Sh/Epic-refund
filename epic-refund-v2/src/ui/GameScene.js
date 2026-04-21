@@ -348,7 +348,7 @@ export class GameScene {
       if (d <= 24) {
         // Активируем Врата если ещё не активны
         if (!this.#deps.gateSystem.isActive()) {
-          const success = this.#deps.gateSystem.approach(room.gate, 2);
+          const success = this.#deps.gateSystem.approach(room.gate, this.#level.levelNumber);
           if (!success) return;
 
           // Первый раз — комментарий Кейна

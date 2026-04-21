@@ -140,11 +140,10 @@ export function createLevel02(systems) {
     tileCol: 7, tileRow: 5,
   });
 
-  // === 2-7: Выход с уровня ===
-  const r07map = makeRoom(['west']);
-  // Яркий тайл "выход" — просто визуально, триггер делается через проверку координат
+  // === 2-7: Выход с уровня → переход в Подземелья ===
+  const r07map = makeRoom(['west', 'east']);
   const room07 = new Room('l2_room_07', r07map, TS);
-  // Без врагов, без Врат — мирная комната. Двери откроются после регистрации ниже.
+  // Мирная комната-выход. Двери откроются после регистрации ниже.
 
   // === Связи между комнатами ===
   room01.setNeighbor('east', 'l2_room_02');
@@ -177,6 +176,8 @@ export function createLevel02(systems) {
 
   room07.setNeighbor('west', 'l2_room_06');
   room07.addDoor('west', 'l2_room_06');
+  // Восточная дверь 2-7 — переход на Уровень 3 «Подземелья»
+  room07.addDoor('east', 'l3_room_01', 'west', 'level_03');
 
   // Открываем двери предзачищенных комнат ПОСЛЕ регистрации всех дверей
   room01.openDoors(); room01.isCleared = true;

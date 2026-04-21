@@ -5,10 +5,12 @@
 
 import { createLevel01 } from './Level01_RottenPeak.js';
 import { createLevel02 } from './Level02_Barracks.js';
+import { createLevel03 } from './Level03_Dungeons.js';
 
 const FACTORIES = {
   level_01: createLevel01,
   level_02: createLevel02,
+  level_03: createLevel03,
 };
 
 export function createLevelByKey(key, systems) {
