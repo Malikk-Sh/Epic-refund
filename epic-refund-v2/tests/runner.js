@@ -59,8 +59,10 @@ const { WeightSystem } = await import('../src/systems/WeightSystem.js');
 const { GateSystem, GATE_REQUIREMENTS } = await import('../src/systems/GateSystem.js');
 const { TOTAL_SKILLS } = await import('../src/data/skills.js');
 const { pickKaneLine } = await import('../src/data/dialogues/kane_dialogues.js');
+const { DialogueRunner } = await import('../src/systems/DialogueRunner.js');
 const { createLevel01 } = await import('../src/levels/Level01_RottenPeak.js');
 const { createLevel02 } = await import('../src/levels/Level02_Barracks.js');
+const { createLevel03 } = await import('../src/levels/Level03_Dungeons.js');
 const { createLevelByKey, hasLevel, getLevelKeys } = await import('../src/levels/LevelRegistry.js');
 const { Homunculus } = await import('../src/entities/enemies/bosses/Homunculus.js');
 
@@ -468,15 +470,17 @@ describe('Level02_Barracks', () => {
 });
 
 describe('LevelRegistry', () => {
-  it('хранит оба уровня', () => {
+  it('хранит три уровня', () => {
     const keys = getLevelKeys();
     expect(keys.includes('level_01')).toBe(true);
     expect(keys.includes('level_02')).toBe(true);
+    expect(keys.includes('level_03')).toBe(true);
   });
 
   it('hasLevel возвращает true для известных ключей', () => {
     expect(hasLevel('level_01')).toBe(true);
     expect(hasLevel('level_02')).toBe(true);
+    expect(hasLevel('level_03')).toBe(true);
     expect(hasLevel('level_99')).toBe(false);
   });
 
@@ -485,6 +489,8 @@ describe('LevelRegistry', () => {
     expect(l1.levelNumber).toBe(1);
     const l2 = createLevelByKey('level_02', makeLevelSystems());
     expect(l2.levelNumber).toBe(2);
+    const l3 = createLevelByKey('level_03', makeLevelSystems());
+    expect(l3.levelNumber).toBe(3);
   });
 
   it('createLevelByKey бросает на неизвестный ключ', () => {
@@ -622,6 +628,170 @@ describe('Boss (Homunculus)', () => {
     boss.update(0.016, fakePlayer, fakeFear, fakeTree, fakeTilemap);
 
     expect(defeats).toBe(1);
+  });
+});
+
+describe('Level03_Dungeons', () => {
+  it('createLevel03 возвращает уровень с 8 комнатами', () => {
+    const level = createLevel03(makeLevelSystems());
+    expect(level.levelNumber).toBe(3);
+    expect(level.rooms.size).toBe(8);
+    expect(level.currentRoomId).toBe('l3_room_01');
+  });
+
+  it('l3_room_03 имеет Врата ATTACK/MINOR', () => {
+    const level = createLevel03(makeLevelSystems());
+    const room = level.rooms.get('l3_room_03');
+    expect(room.gate !== null).toBe(true);
+    expect(room.gate.requirement).toBe('attack');
+    expect(room.gate.size).toBe('minor');
+  });
+
+  it('l3_room_07 имеет Врата CHOICE/MAJOR', () => {
+    const level = createLevel03(makeLevelSystems());
+    const room = level.rooms.get('l3_room_07');
+    expect(room.gate !== null).toBe(true);
+    expect(room.gate.requirement).toBe('choice');
+    expect(room.gate.size).toBe('major');
+  });
+
+  it('l3_room_08 — мирная комната-выход', () => {
+    const level = createLevel03(makeLevelSystems());
+    const exit = level.rooms.get('l3_room_08');
+    expect(exit.enemies.length).toBe(0);
+    expect(exit.isCleared).toBe(true);
+  });
+
+  it('все двери ведут в существующие комнаты', () => {
+    const level = createLevel03(makeLevelSystems());
+    assertRoomGraphIntact(level);
+  });
+
+  it('минимап-раскладка определена для всех комнат', () => {
+    const level = createLevel03(makeLevelSystems());
+    expect(level.minimapLayout !== null).toBe(true);
+    for (const id of level.rooms.keys()) {
+      expect(level.minimapLayout[id] !== undefined).toBe(true);
+    }
+  });
+
+  it('l3_room_08 имеет исходящую межуровневую дверь', () => {
+    const level = createLevel03(makeLevelSystems());
+    const exit = level.rooms.get('l3_room_08');
+    const crossDoor = exit.doors.find(d => d.toLevelKey);
+    expect(crossDoor !== undefined).toBe(true);
+    expect(crossDoor.toLevelKey).toBe('level_04');
+  });
+});
+
+describe('Level02→Level03 переход', () => {
+  it('l2_room_07 имеет дверь в l3_room_01', () => {
+    const l2 = createLevel02(makeLevelSystems());
+    const room07 = l2.rooms.get('l2_room_07');
+    const crossDoor = room07.doors.find(d => d.toLevelKey === 'level_03');
+    expect(crossDoor !== undefined).toBe(true);
+    expect(crossDoor.toRoomId).toBe('l3_room_01');
+  });
+});
+
+describe('DialogueRunner', () => {
+  const SIMPLE_STORY = {
+    start: {
+      lines: ['Привет', 'Как дела?'],
+      choices: [
+        { text: 'Хорошо', next: 'good' },
+        { text: 'Плохо',  next: null  },
+      ],
+    },
+    good: {
+      lines: ['Рад слышать!'],
+      choices: null,
+    },
+  };
+
+  it('peek возвращает первую строку после start', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    expect(r.peek().type).toBe('line');
+    expect(r.peek().text).toBe('Привет');
+  });
+
+  it('advance продвигает к следующей строке', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    r.advance();
+    expect(r.peek().text).toBe('Как дела?');
+  });
+
+  it('после последней строки peek возвращает choices', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    r.advance(); r.advance();
+    const step = r.peek();
+    expect(step.type).toBe('choices');
+    expect(step.choices.length).toBe(2);
+  });
+
+  it('choose переходит в следующий knot', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    r.advance(); r.advance();
+    r.choose(0); // 'good'
+    expect(r.peek().type).toBe('line');
+    expect(r.peek().text).toBe('Рад слышать!');
+  });
+
+  it('knot с choices: null завершает историю после строк', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    r.advance(); r.advance();
+    r.choose(0); // 'good'
+    r.advance(); // после 'Рад слышать!'
+    expect(r.peek().type).toBe('end');
+    expect(r.isEnded).toBe(true);
+  });
+
+  it('choose с next: null завершает историю', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    r.advance(); r.advance();
+    r.choose(1); // next: null
+    expect(r.isEnded).toBe(true);
+    expect(r.peek().type).toBe('end');
+  });
+
+  it('контекстная функция получает ctx и возвращает строку', () => {
+    const STORY = {
+      start: {
+        lines: [ctx => ctx.phase === 'god' ? 'Великий!' : 'Привет.'],
+        choices: null,
+      },
+    };
+    const r = new DialogueRunner(STORY);
+    r.setContext({ phase: 'god' });
+    r.start();
+    expect(r.peek().text).toBe('Великий!');
+
+    r.setContext({ phase: 'nobody' });
+    r.start();
+    expect(r.peek().text).toBe('Привет.');
+  });
+
+  it('isEnded = false в середине истории', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    expect(r.isEnded).toBe(false);
+  });
+
+  it('перезапуск через start сбрасывает состояние', () => {
+    const r = new DialogueRunner(SIMPLE_STORY);
+    r.start();
+    r.advance(); r.advance();
+    r.choose(1); // завершает
+    expect(r.isEnded).toBe(true);
+    r.start(); // перезапуск
+    expect(r.isEnded).toBe(false);
+    expect(r.peek().text).toBe('Привет');
   });
 });
 
