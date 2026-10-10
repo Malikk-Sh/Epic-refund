@@ -2,6 +2,7 @@
 // Никаких расчётов урона внутри — только через CombatSystem.
 
 import { BALANCE } from '../data/balance.js';
+import { chooseCombatTarget } from '../systems/CombatTargeting.js';
 
 const B = BALANCE.player;
 const BC = BALANCE.combat;
@@ -65,6 +66,8 @@ export class Player {
   shieldCharges = 0;
   #hasShieldSkill = false;
   isStealthed = false;
+  touchAimAssist = false;
+  aimTarget = null;
   abilityInvulnerable = false;
 
   // Колбэк на атаку (регистрируется сценой)
@@ -112,9 +115,14 @@ export class Player {
 
   // ===== ГЛАВНЫЙ ЦИКЛ =====
 
-  update(dt, input, tilemap) {
+  update(dt, input, tilemap, enemies = []) {
     if (!this.isAlive) return;
 
+    this.touchAimAssist = Boolean(input.touchAssistEnabled);
+    this.aimTarget = this.touchAimAssist
+      ? chooseCombatTarget(enemies, this.x, this.y, this.facingX, this.facingY,
+        BC.attackRangeLight + B.assistExtraRange)
+      : null;
     this.#stateTimer += dt;
     this.#updateTimers(dt);
     this.#captureAction(input);
@@ -126,7 +134,7 @@ export class Player {
     } else if (this.#state === 'hurt') {
       this.#updateHurt(dt);
     } else {
-      this.#handleInput(input);
+      this.#handleInput(input, enemies);
       // Атака и кувырок сохраняют своё FSM-состояние. Ранее вызов движения
       // сразу превращал «attack» обратно в «idle», ломая анимацию удара.
       if (this.#state !== 'attack' && this.#state !== 'roll') {
@@ -182,7 +190,7 @@ export class Player {
     }
   }
 
-  #handleInput(input) {
+  #handleInput(input, enemies) {
     const action = this.#bufferedAction;
     if (action === 'roll' &&
         this.#rollCooldown <= 0 && this.stamina >= BC.staminaCostRoll) {
@@ -193,11 +201,13 @@ export class Player {
     if (action === 'attackLight' && this.#attackCooldown <= 0 &&
         this.stamina >= BC.staminaCostLight) {
       this.clearBufferedAction();
+      this.#aimForTouch(enemies, BC.attackRangeLight + B.assistExtraRange);
       this.#tryLightAttack();
       return;
     }
     if (action === 'attackHeavy' && this.#attackCooldown <= 0) {
       this.clearBufferedAction();
+      this.#aimForTouch(enemies, BC.attackRangeHeavy + B.assistExtraRange);
       this.#tryHeavyOrParry();
       return;
     }
@@ -212,8 +222,21 @@ export class Player {
     // на телефонах: не нужно многократно тыкать в крошечную кнопку.
     if (!action && input.isHeld('attackLight') &&
         this.#attackCooldown <= 0 && this.stamina >= BC.staminaCostLight) {
+      this.#aimForTouch(enemies, BC.attackRangeLight + B.assistExtraRange);
       this.#tryLightAttack();
     }
+  }
+
+  #aimForTouch(enemies, range) {
+    if (!this.touchAimAssist) return;
+    const target = chooseCombatTarget(enemies, this.x, this.y,
+      this.facingX, this.facingY, range);
+    if (!target) return;
+    const dx = target.x - this.x, dy = target.y - this.y;
+    const length = Math.hypot(dx, dy) || 1;
+    this.facingX = dx / length;
+    this.facingY = dy / length;
+    this.aimTarget = target;
   }
 
   clearBufferedAction() {
@@ -518,6 +541,7 @@ export class Player {
     this.#isRolling = false;
     this.#deathSaveUsed = false;
     this.isStealthed = false;
+    this.aimTarget = null;
     this.abilityInvulnerable = false;
     this.#applySkillStats();
     this.hp = Math.max(1, Math.min(this.maxHP, state.hp ?? this.maxHP));
