@@ -98,6 +98,22 @@ try{
     if(!success)throw Error('Skill failed to cast during mobile QA: '+skillId);
     await snap('ability-'+skillId);
   }
+  // End-to-end: настоящие сенсорные нажатия, а не прямые вызовы sacrifice().
+  await go('level_01','l1_room_04');
+  if(!await page.evaluate(()=>window.__epicQA.qaShowGate())) throw Error('Cannot open Gate for touch-confirm QA');
+  const sacrificeBtn = page.locator('#mobile-gate-nav [data-action="interact"]');
+  await sacrificeBtn.tap();
+  await page.waitForTimeout(120);
+  const remainingAfterFirst=await page.evaluate(()=>window.game.debug.getSkillTree().getActiveSkillCount());
+  if(remainingAfterFirst!==20) throw Error('First touch incorrectly sacrificed a skill');
+  await snap('gate-mobile-confirmation');
+  await sacrificeBtn.tap();
+  await page.waitForTimeout(120);
+  const remainingAfterSecond=await page.evaluate(()=>window.game.debug.getSkillTree().getActiveSkillCount());
+  if(remainingAfterSecond!==19) throw Error('Second touch failed to sacrifice');
+  if(await page.locator('#mobile-gate-nav').evaluate(el=>el.classList.contains('gate-nav-visible')))
+    throw Error('Gate nav stayed open after sacrifice');
+
   await go('level_02','l2_room_01');
   for(const n of [16,11,6,2,0]){await page.evaluate(n=>window.__epicQA.qaSkillCount(n),n);await snap('hud-'+n+'-skills');}
   await page.evaluate(()=>window.__epicQA.qaDie());await snap('player-death');
