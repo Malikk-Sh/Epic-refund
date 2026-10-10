@@ -67,6 +67,7 @@ const { createLevelByKey, hasLevel, getLevelKeys } = await import('../src/levels
 const { Homunculus } = await import('../src/entities/enemies/bosses/Homunculus.js');
 const { InputManager } = await import('../src/core/InputManager.js');
 const { SaveManager } = await import('../src/core/SaveManager.js');
+const { HUD } = await import('../src/ui/HUD.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -814,6 +815,23 @@ describe('KaneDialogues', () => {
 
 
 describe('Mobile and checkpoint regressions', () => {
+  it('HUD рисуется с актуальным API дерева навыков', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const ctx = new Proxy({}, {
+      get(obj, key) { return obj[key] ?? (() => ({ width: 0 })); },
+      set(obj, key, value) { obj[key] = value; return true; },
+    });
+    const hud = new HUD({ ctx, logicalWidth: 768, logicalHeight: 432 }, null, tree, bus);
+    hud.draw(0.016, {
+      hp: 150, maxHP: 150,
+      mana: 100, maxMana: 100,
+      stamina: 100, maxStamina: 100,
+    });
+    expect(true).toBe(true);
+  });
+
+
   it('закрытые Врата блокируют только выход вперёд', () => {
     const systems = makeLevelSystems();
     const level = createLevel01(systems);
