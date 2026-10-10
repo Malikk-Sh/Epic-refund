@@ -1,0 +1,80 @@
+// Mobile screenshot regression: QA methods exist ONLY in a temporary copy.
+import { chromium } from 'playwright';
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+const root=process.cwd(),dest=path.resolve(process.env.EPIC_SCREENSHOT_DIR||'qa-screenshots');
+const temp=await mkdtemp(path.join(os.tmpdir(),'epic-qa-'));let browser,server;
+const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
+const errors=[], images=[];
+async function pause(ms){return new Promise(r=>setTimeout(r,ms));}
+try{
+  await mkdir(dest,{recursive:true});
+  const folder=path.join(temp,'game');
+  await cp(root,folder,{recursive:true,filter:p=>!p.split(path.sep).includes('node_modules')&&!p.split(path.sep).includes('qa-screenshots')});
+  const filename=path.join(folder,'src/ui/GameScene.js');
+  let code=await readFile(filename,'utf8');
+  const init='    this.#saveCheckpoint();\n  }\n\n  // Загрузка/смена уровня.';
+  if(!code.includes(init)||!code.includes('  #announceLevel(levelKey) {')||!code.includes('  destroy() {'))
+    throw Error('QA hooks could not be installed: source changed');
+  code=code.replace(init,'    this.#saveCheckpoint();\n    window.__epicQA=this;\n  }\n\n  // Загрузка/смена уровня.');
+  code=code.replace('  #announceLevel(levelKey) {',"  #announceLevel(levelKey) {\n    if (new URLSearchParams(location.search).has('qa')) return;");
+  code=code.replace('  destroy() {',qa+'\n  destroy() {');
+  await writeFile(filename,code);
+  const port=4173,url='http://127.0.0.1:'+port+'/index.html?debug&qa=quiet';
+  server=spawn('python3',['-m','http.server',String(port),'--bind','127.0.0.1','--directory',folder],{stdio:'pipe'});
+  let ready=false;
+  for(let i=0;i<80;i++){try{const r=await fetch(url);if(r.ok){ready=true;break;}}catch{}await pause(100);}
+  if(!ready)throw Error('Test server did not start');
+  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+  const ctx=await browser.newContext({viewport:{width:844,height:390},deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  const page=await ctx.newPage();
+  page.on('pageerror',e=>errors.push(String(e)));
+  await page.goto(url);
+  await page.waitForFunction(()=>Boolean(window.__epicQA)&&!document.getElementById('loading-screen'),null,{timeout:20000});
+  if(!await page.locator('#mobile-controls').evaluate(el=>el.classList.contains('visible')))throw Error('Mobile controls not visible');
+  async function snap(name){await pause(120);await page.screenshot({path:path.join(dest,name+'.png')});images.push(name+'.png');}
+  async function go(l,id){await page.evaluate(({l,id})=>window.__epicQA.qaGoTo(l,id),{l,id});}
+  await snap('00-mobile-landscape');
+  await page.locator('#settings-open').click();
+  if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
+  await snap('01-mobile-settings');
+  await page.locator('#settings-close').click();
+  for(const [level,n] of [['level_01',6],['level_02',7],['level_03',8]]){
+    for(let i=1;i<=n;i++){
+      const id='l'+Number(level.slice(-2))+'_room_'+String(i).padStart(2,'0');
+      await go(level,id);await snap('room-'+id);
+    }
+  }
+  for(const [level,id] of [['level_01','l1_room_04'],['level_02','l2_room_04'],
+   ['level_02','l2_room_06'],['level_03','l3_room_03'],['level_03','l3_room_07']]){
+    await go(level,id);
+    if(!await page.evaluate(()=>window.__epicQA.qaShowGate()))throw Error('Gate cannot be shown: '+id);
+    await snap('gate-'+id+'-select');
+    await page.evaluate(()=>window.__epicQA.qaOpenGate());
+    await snap('gate-'+id+'-open');
+  }
+  await go('level_01','l1_room_06');
+  for(const p of [1,2,3]){await page.evaluate(p=>window.__epicQA.qaBossPhase(p),p);await snap('boss-phase-'+p);}
+  await go('level_02','l2_room_01');
+  if(await page.evaluate(()=>window.__epicQA.qaTalk()))await snap('dialogue-gribl');
+  for(const n of [16,11,6,2,0]){await page.evaluate(n=>window.__epicQA.qaSkillCount(n),n);await snap('hud-'+n+'-skills');}
+  await page.evaluate(()=>window.__epicQA.qaDie());await snap('player-death');
+  await page.setViewportSize({width:390,height:844});
+  await page.reload();
+  await page.waitForFunction(()=>Boolean(window.__epicQA)&&!document.getElementById('loading-screen'),null,{timeout:20000});
+  await snap('mobile-portrait');
+  await page.locator('#settings-open').click();await snap('settings-portrait');
+  await page.locator('#settings-close').click();
+  await writeFile(path.join(dest,'manifest.json'),JSON.stringify({
+    note:'QA teleports: screenshots prove UI renders but NOT full playthrough',
+    screenshotCount:images.length,images,errors
+  },null,2));
+  console.log('Captured',images.length,'screenshots;',errors.length,'JavaScript errors');
+  if(errors.length){console.error(errors);process.exitCode=1;}
+}finally{
+  if(browser)await browser.close();
+  if(server)server.kill();
+  await rm(temp,{recursive:true,force:true});
+}
