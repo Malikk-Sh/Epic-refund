@@ -76,6 +76,7 @@ const { Player } = await import('../src/entities/Player.js');
 const { Renderer } = await import('../src/core/Renderer.js');
 const { Camera } = await import('../src/core/Camera.js');
 const { Game } = await import('../src/core/Game.js');
+const { MobileFeedback } = await import('../src/ui/MobileFeedback.js');
 const { WorldRenderer } = await import('../src/render/WorldRenderer.js');
 const { chooseCombatTarget, blockedLine } = await import('../src/systems/CombatTargeting.js');
 
@@ -1033,6 +1034,55 @@ describe('Mobile assisted aiming and reliable skills', () => {
     expect(player.shieldCharges).toBe(1);
     player.reviveFromCheckpoint({shieldCharges:0});
     expect(player.shieldCharges).toBe(0);
+  });
+});
+
+describe('Optional mobile haptic feedback', () => {
+  it('не вибрирует без разрешения игрока, даже когда бой активен', () => {
+    const oldNav=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+    const oldDoc=Object.getOwnPropertyDescriptor(globalThis,'document');
+    const oldStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+    const calls=[], storage=new Map();
+    try {
+      Object.defineProperty(globalThis,'navigator',{configurable:true,
+        value:{vibrate:pattern=>{calls.push(pattern);return true;}}});
+      Object.defineProperty(globalThis,'document',{configurable:true,
+        value:{hidden:false}});
+      Object.defineProperty(globalThis,'localStorage',{configurable:true,
+        value:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)}});
+      const bus=new EventBus();
+      const feedback=new MobileFeedback(bus,{visible:true});
+      expect(feedback.supported).toBe(true);
+      expect(feedback.enabled).toBe(false);
+      bus.emit('combat:playerHit');
+      expect(calls.length).toBe(0);
+      feedback.setEnabled(true);
+      expect(storage.get('epic_refund_haptics')).toBe('true');
+      bus.emit('combat:playerHit');
+      expect(calls.length).toBe(1);
+      expect(Array.isArray(calls[0])).toBe(true);
+      feedback.setEnabled(false);
+      expect(calls.at(-1)).toBe(0);
+      feedback.destroy();
+    } finally {
+      if(oldNav) Object.defineProperty(globalThis,'navigator',oldNav);
+      else delete globalThis.navigator;
+      if(oldDoc) Object.defineProperty(globalThis,'document',oldDoc);
+      else delete globalThis.document;
+      if(oldStorage) Object.defineProperty(globalThis,'localStorage',oldStorage);
+      else delete globalThis.localStorage;
+    }
+  });
+
+  it('не создаёт побочных эффектов без navigator.vibrate', () => {
+    const bus=new EventBus();
+    const feedback=new MobileFeedback(bus,{visible:true});
+    if(!feedback.supported) {
+      feedback.setEnabled(true);
+      expect(feedback.enabled).toBe(false);
+      expect(feedback.pulse(18)).toBe(false);
+    }
+    feedback.destroy();
   });
 });
 
