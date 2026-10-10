@@ -85,6 +85,7 @@ export function createLevel01(systems) {
   const gatePos = room04.tilemap.tileToWorldCenter(7, 5);
   room04.setGate({
     id: 'gate_1_1',
+    exitDirection: 'east',
     requirement: GATE_REQUIREMENTS.CHOICE,
     size: GATE_SIZES.MINOR,
     label: 'Врата Прозрения',
