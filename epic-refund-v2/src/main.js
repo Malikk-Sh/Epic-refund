@@ -1,5 +1,7 @@
 import { Game } from './core/Game.js';
 import { GameScene } from './ui/GameScene.js';
+import { MobileControls } from './ui/MobileControls.js';
+import { SettingsMenu } from './ui/SettingsMenu.js';
 
 const canvas = document.getElementById('game-canvas');
 const loadingScreen = document.getElementById('loading-screen');
@@ -25,6 +27,8 @@ async function main() {
     // Пока ассетов нет — используются плейсхолдеры с подписями.
 
     await game.loadScene(GameScene);
+    const controls = new MobileControls(game.inputManager);
+    new SettingsMenu(game, controls);
     setProgress(100);
 
     setTimeout(() => {
