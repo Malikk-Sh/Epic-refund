@@ -283,7 +283,7 @@ export class HUD {
         const ix = gx + i * (iconSize + iconGap);
         const iy = iconY;
 
-        const isActive = this.#skillTree.isSkillActive(skillId);
+        const isActive = this.#skillTree.isActive(skillId);
         const isEcho   = this.#skillTree.isEchoActive(skillId);
 
         this.#drawSkillIcon(ctx, skillData, ix, iy, iconSize, isActive, isEcho, alpha);
