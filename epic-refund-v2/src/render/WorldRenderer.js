@@ -2,6 +2,7 @@
 // Использует SpriteRegistry: если спрайт зарегистрирован — рисует его, иначе — плейсхолдер.
 
 import { TILE } from '../levels/Tilemap.js';
+import { drawHeroArt, drawEnemyArt, drawNpcArt } from './ActorArt.js';
 
 // Цвета тайлов (для плейсхолдеров)
 const TILE_COLORS = {
@@ -37,7 +38,7 @@ export class WorldRenderer {
     const tm = room.tilemap;
 
     // 1. Тайлмап
-    this.#drawTilemap(ctx, tm, cam);
+    this.#drawTilemap(ctx, tm, cam, room.id);
 
     // 2. Врата Забвения (если есть) — под сущностями
     if (room.gate) {
@@ -59,8 +60,21 @@ export class WorldRenderer {
 
   // === ТАЙЛМАП ===
 
-  #drawTilemap(ctx, tm, cam) {
+  #drawTilemap(ctx, tm, cam, roomId) {
     const ts = tm.tileSize;
+    // Каждая локация имеет своё окружение: гниль, укреплённый камень, катакомбы.
+    const biome = roomId?.startsWith('l3') ? 'catacomb' :
+      roomId?.startsWith('l2') ? 'barracks' : 'peak';
+    const tint = biome === 'peak' ? {
+      floor: '#283029', shade: '#222b25', wall: '#3c493d', edge: '#637466',
+      debris: '#5a7653', crack: '#161e1b',
+    } : biome === 'barracks' ? {
+      floor: '#343039', shade: '#2b2833', wall: '#4c4553', edge: '#786c7d',
+      debris: '#82726c', crack: '#231e2b',
+    } : {
+      floor: '#2c242e', shade: '#27202b', wall: '#463342', edge: '#735563',
+      debris: '#7c5367', crack: '#1b1622',
+    };
 
     // Определяем видимый диапазон тайлов (culling с учётом zoom)
     const startCol = Math.max(0, Math.floor(cam.x / ts));
@@ -79,24 +93,47 @@ export class WorldRenderer {
         const sw = ts * cam.zoom;
         const sh = ts * cam.zoom;
 
-        const color = TILE_COLORS[t] ?? '#000';
+        const floor = t === TILE.FLOOR || t === TILE.SPAWN;
+        const color = floor ? (((c + r) & 1) ? tint.floor : tint.shade) :
+          (t === TILE.WALL ? tint.wall : TILE_COLORS[t] ?? '#000');
         ctx.fillStyle = color;
-        ctx.fillRect(screen.x, screen.y, sw, sh);
+        ctx.fillRect(screen.x, screen.y, sw + .2, sh + .2);
 
-        // Сетка пола (вариация для читаемости)
-        if (t === TILE.FLOOR && (c + r) % 2 === 0) {
-          ctx.fillStyle = FLOOR_VAR_COLOR;
-          ctx.fillRect(screen.x, screen.y, sw, sh);
+        // Не-сеточный ритм материалов: деталь детерминирована координатами тайла.
+        const seed = ((c * 73856093) ^ (r * 19349663)) >>> 0;
+        if (floor) {
+          const edge = Math.max(1, Math.round(cam.zoom));
+          ctx.fillStyle = tint.crack;
+          if ((seed % 6) === 0) {
+            ctx.fillRect(screen.x + sw * .18, screen.y + sh * .36,
+              sw * .28, edge);
+            ctx.fillRect(screen.x + sw * .45, screen.y + sh * .36,
+              edge, sh * .23);
+          }
+          if ((seed % 5) === 0) {
+            ctx.fillStyle = tint.debris;
+            ctx.globalAlpha = .42;
+            ctx.fillRect(screen.x + sw * .73, screen.y + sh * .2,
+              edge * 2, edge);
+            ctx.fillRect(screen.x + sw * .58, screen.y + sh * .63,
+              edge, edge);
+            ctx.globalAlpha = 1;
+          }
         }
 
         // Детализация стен
         if (t === TILE.WALL) {
           // Верхний хайлайт
-          ctx.fillStyle = '#5c4a35';
-          ctx.fillRect(screen.x, screen.y, sw, 3);
-          // Нижняя тень
-          ctx.fillStyle = '#2e2215';
-          ctx.fillRect(screen.x, screen.y + sh - 3, sw, 3);
+          ctx.fillStyle = tint.edge;
+          ctx.fillRect(screen.x, screen.y, sw, Math.max(2, cam.zoom * 2));
+          // Вертикальные кладочные швы создают глубину, но не мешают навигации.
+          ctx.fillStyle = tint.crack;
+          ctx.fillRect(screen.x + sw * ((seed % 2) ? .32 : .72),
+            screen.y + sh * .18, Math.max(1, cam.zoom), sh * .56);
+          ctx.fillRect(screen.x + sw * .1, screen.y + sh * .69,
+            sw * .8, Math.max(1, cam.zoom));
+          ctx.fillStyle = 'rgba(6,7,12,.55)';
+          ctx.fillRect(screen.x, screen.y + sh - cam.zoom * 3, sw, cam.zoom * 3);
         }
 
         // Детализация двери
@@ -107,6 +144,10 @@ export class WorldRenderer {
           // Ручка
           ctx.fillStyle = '#d8b868';
           ctx.fillRect(screen.x + sw / 2 - 2, screen.y + sh / 2 - 2, 4, 4);
+          // Мотив стянутых металлических полос (чётко закрыт проход).
+          ctx.fillStyle = '#241b23';
+          ctx.fillRect(screen.x + sw * .2, screen.y + sh * .15, cam.zoom, sh * .7);
+          ctx.fillRect(screen.x + sw * .8, screen.y + sh * .15, cam.zoom, sh * .7);
         }
 
         if (t === TILE.DOOR_OPEN) {
@@ -193,12 +234,7 @@ export class WorldRenderer {
         flipX: player.facingX < 0,
       });
     } else {
-      this.#drawPlaceholder(ctx, player, screen.x, screen.y, color, 'Кейн', {
-        strokeColor: '#000',
-        facingX: player.facingX,
-        facingY: player.facingY,
-        labelColor: color,
-      });
+      drawHeroArt(ctx, player, screen.x, screen.y, cam.zoom, performance.now() / 1000);
     }
 
     // Если атакует — визуализируем дугу атаки
@@ -256,12 +292,7 @@ export class WorldRenderer {
         tint: enemy.hitFlash > 0 ? 'rgba(255,100,100,0.6)' : null,
       });
     } else {
-      this.#drawPlaceholder(ctx, enemy, screen.x, screen.y, color, enemy.displayName, {
-        strokeColor: '#000',
-        facingX: enemy.facingX,
-        facingY: enemy.facingY,
-        labelColor: enemy.state === 'flee' ? '#ffcc44' : '#fff',
-      });
+      drawEnemyArt(ctx, enemy, screen.x, screen.y, cam.zoom, performance.now() / 1000);
     }
 
     // HP-бар (если HP < max)
@@ -271,10 +302,10 @@ export class WorldRenderer {
   }
 
   #drawHPBar(ctx, enemy, screen) {
-    const barW = 20;
-    const barH = 2;
+    const barW = enemy.isBoss ? 48 : 27;
+    const barH = enemy.isBoss ? 4 : 3;
     const x = Math.round(screen.x - barW / 2);
-    const y = Math.round(screen.y - enemy.height / 2 - 12);
+    const y = Math.round(screen.y - (enemy.isBoss ? 48 : 32));
 
     ctx.fillStyle = '#000';
     ctx.fillRect(x - 1, y - 1, barW + 2, barH + 2);
@@ -292,10 +323,7 @@ export class WorldRenderer {
     if (this.#spriteRegistry.has(npc.typeName)) {
       this.#spriteRegistry.draw(ctx, npc.typeName, screen.x, screen.y);
     } else {
-      this.#drawPlaceholder(ctx, npc, screen.x, screen.y, npc.color, npc.displayName, {
-        strokeColor: '#000',
-        labelColor: '#c8a96e',
-      });
+      drawNpcArt(ctx, npc, screen.x, screen.y, cam.zoom, performance.now() / 1000);
     }
 
     // Подсказка взаимодействия
@@ -315,7 +343,7 @@ export class WorldRenderer {
 
   #drawGate(ctx, gate, cam) {
     const screen = cam.worldToScreen(gate.x, gate.y);
-    const ts = 24;  // tileSize
+    const ts = 24 * cam.zoom;  // visual: world tile scaled to screen
 
     // Фиолетовое свечение
     const grad = ctx.createRadialGradient(screen.x, screen.y, 0, screen.x, screen.y, ts);
