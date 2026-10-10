@@ -11,6 +11,10 @@ const SKILL_ACTIONS = [
 const CHOICE_ACTIONS = [
   ['choice1', '1'], ['choice2', '2'], ['choice3', '3'], ['choice4', '4'],
 ];
+const GATE_ACTIONS = [
+  ['up', '↑', 'Предыдущий навык'], ['down', '↓', 'Следующий навык'],
+  ['pause', '✕', 'Закрыть Врата'],
+];
 
 export class MobileControls {
   #input;
@@ -21,6 +25,7 @@ export class MobileControls {
   #heldDirections = new Set();
   #visible = false;
   #unsubscribeChoices = null;
+  #unsubscribeGate = null;
 
   constructor(input, eventBus) {
     this.#input = input;
@@ -32,6 +37,7 @@ export class MobileControls {
       '<div id="mobile-skills" aria-label="Навыки"></div>',
       '<div id="mobile-actions" aria-label="Действия"></div>',
       '<div id="mobile-choices" aria-label="Варианты ответа"></div>',
+      '<div id="mobile-gate-nav" aria-label="Управление выбором навыка у Врат"></div>',
     ].join('');
     document.body.append(this.#root);
     this.#stick = this.#root.querySelector('#move-pad');
@@ -39,6 +45,7 @@ export class MobileControls {
     this.#populate('#mobile-skills', SKILL_ACTIONS, 'skill');
     this.#populate('#mobile-actions', MOBILE_ACTIONS, 'action');
     this.#populate('#mobile-choices', CHOICE_ACTIONS, 'choice');
+    this.#populate('#mobile-gate-nav', GATE_ACTIONS, 'gate-nav');
     this.#stick.addEventListener('pointerdown', this.#startStick);
     this.#stick.addEventListener('pointermove', this.#moveStick);
     this.#stick.addEventListener('pointerup', this.#stopStick);
@@ -46,6 +53,9 @@ export class MobileControls {
     window.addEventListener('blur', this.#releaseAll);
     this.#unsubscribeChoices = eventBus.on('ui:choices', ({ visible }) => {
       this.#root.querySelector('#mobile-choices').classList.toggle('choices-visible', Boolean(visible));
+    });
+    this.#unsubscribeGate = eventBus.on('ui:gate', ({ visible }) => {
+      this.#root.querySelector('#mobile-gate-nav').classList.toggle('gate-nav-visible', Boolean(visible));
     });
 
     const touch = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
@@ -145,6 +155,7 @@ export class MobileControls {
     window.removeEventListener('blur', this.#releaseAll);
     this.#releaseAll();
     this.#unsubscribeChoices?.();
+    this.#unsubscribeGate?.();
     document.body.classList.remove('touch-active');
     this.#root.remove();
   }
