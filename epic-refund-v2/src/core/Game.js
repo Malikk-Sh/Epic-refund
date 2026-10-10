@@ -155,6 +155,7 @@ export class Game {
     this.#currentScene?.destroy();
     this.#eventBus.clear();
     this.#inputManager.destroy();
+    this.#renderer?.destroy();
   }
 
   #setupDebug() {
