@@ -1,0 +1,12 @@
+{
+  "name": "Epic Refund",
+  "short_name": "Epic Refund",
+  "description": "Обратная action-RPG о потере силы",
+  "lang": "ru",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0a0a0a",
+  "theme_color": "#c8a96e"
+}
