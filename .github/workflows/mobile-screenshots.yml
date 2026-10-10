@@ -1,0 +1,32 @@
+name: Mobile browser screenshots
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright
+        working-directory: epic-refund-v2
+        run: npm install --no-save playwright@1.56.1
+      - name: Install Chromium
+        working-directory: epic-refund-v2
+        run: npx playwright install --with-deps chromium
+      - name: Capture mobile scenarios
+        working-directory: epic-refund-v2
+        run: node tests/capture-mobile.mjs
+      - name: Upload PNG screenshots and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: epic-refund-mobile-screenshots
+          path: epic-refund-v2/qa-screenshots/
+          if-no-files-found: warn
