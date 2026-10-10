@@ -18,6 +18,9 @@ export class Renderer {
   // Отступы для letterbox
   #offsetX = 0;
   #offsetY = 0;
+  #pixelRatio = 1;
+  #resizeBound = () => this.#resize();
+  #orientationBound = () => this.#resize();
 
   constructor(canvas) {
     this.#canvas = canvas;
@@ -25,9 +28,9 @@ export class Renderer {
     this.#ctx.imageSmoothingEnabled = false;
 
     this.#resize();
-    window.addEventListener('resize', () => this.#resize());
-    // Для мобильных — обрабатываем смену ориентации
-    window.addEventListener('orientationchange', () => setTimeout(() => this.#resize(), 100));
+    window.addEventListener('resize', this.#resizeBound);
+    // При повороте orientationchange тоже обновляет пропорции и буфер.
+    window.addEventListener('orientationchange', this.#orientationBound);
   }
 
   #resize() {
@@ -46,18 +49,20 @@ export class Renderer {
       this.#scale = Math.floor(this.#scale);
     }
 
-    // Физический размер canvas
-    const physicalW = Math.floor(this.#logicalWidth * this.#scale);
-    const physicalH = Math.floor(this.#logicalHeight * this.#scale);
+    // CSS-размер и физический буфер различаются на Retina/HiDPI.
+    // Не раздуваем буфер бесконтрольно: максимум ~3.2 Мпикселя.
+    const cssW = Math.max(1, Math.floor(this.#logicalWidth * this.#scale));
+    const cssH = Math.max(1, Math.floor(this.#logicalHeight * this.#scale));
+    const maxRatio = Math.sqrt(3_200_000 / (cssW * cssH));
+    this.#pixelRatio = Math.max(1, Math.min(2, window.devicePixelRatio || 1, maxRatio));
+    this.#canvas.width = Math.round(cssW * this.#pixelRatio);
+    this.#canvas.height = Math.round(cssH * this.#pixelRatio);
+    this.#canvas.style.width = cssW + 'px';
+    this.#canvas.style.height = cssH + 'px';
 
-    this.#canvas.width = physicalW;
-    this.#canvas.height = physicalH;
-    this.#canvas.style.width = physicalW + 'px';
-    this.#canvas.style.height = physicalH + 'px';
-
-    // Letterbox отступы (нужны только если canvas меньше окна — они уже учтены flex-центрированием)
-    this.#offsetX = (targetW - physicalW) / 2;
-    this.#offsetY = (targetH - physicalH) / 2;
+    // Letterbox измеряется CSS-пикселями, не размерами backing store.
+    this.#offsetX = (targetW - cssW) / 2;
+    this.#offsetY = (targetH - cssH) / 2;
 
     // Отключаем сглаживание после каждого resize — некоторые браузеры сбрасывают
     this.#ctx.imageSmoothingEnabled = false;
@@ -67,7 +72,8 @@ export class Renderer {
   beginFrame() {
     this.#ctx.save();
     // Применяем масштаб — дальнейшие команды рендера работают в логических координатах
-    this.#ctx.setTransform(this.#scale, 0, 0, this.#scale, 0, 0);
+    const physicalScale = this.#scale * this.#pixelRatio;
+    this.#ctx.setTransform(physicalScale, 0, 0, physicalScale, 0, 0);
     this.#ctx.imageSmoothingEnabled = false;
 
     // Очистка
@@ -104,4 +110,10 @@ export class Renderer {
   get logicalWidth() { return this.#logicalWidth; }
   get logicalHeight() { return this.#logicalHeight; }
   get scale() { return this.#scale; }
+  get pixelRatio() { return this.#pixelRatio; }
+
+  destroy() {
+    window.removeEventListener('resize', this.#resizeBound);
+    window.removeEventListener('orientationchange', this.#orientationBound);
+  }
 }
