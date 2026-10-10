@@ -2,6 +2,7 @@ import { Game } from './core/Game.js';
 import { GameScene } from './ui/GameScene.js';
 import { MobileControls } from './ui/MobileControls.js';
 import { SettingsMenu } from './ui/SettingsMenu.js';
+import { MobileFeedback } from './ui/MobileFeedback.js';
 
 const canvas = document.getElementById('game-canvas');
 const loadingScreen = document.getElementById('loading-screen');
@@ -26,7 +27,8 @@ async function main() {
 
     await game.loadScene(GameScene);
     const controls = new MobileControls(game.inputManager, game.eventBus);
-    new SettingsMenu(game, controls);
+    const feedback = new MobileFeedback(game.eventBus, controls);
+    new SettingsMenu(game, controls, feedback);
     setProgress(100);
 
     setTimeout(() => {
