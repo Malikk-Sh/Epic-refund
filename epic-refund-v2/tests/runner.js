@@ -68,6 +68,7 @@ const { Homunculus } = await import('../src/entities/enemies/bosses/Homunculus.j
 const { InputManager } = await import('../src/core/InputManager.js');
 const { SaveManager } = await import('../src/core/SaveManager.js');
 const { HUD } = await import('../src/ui/HUD.js');
+const { AbilitySystem } = await import('../src/systems/AbilitySystem.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -928,6 +929,127 @@ describe('Mobile and checkpoint regressions', () => {
     } finally {
       globalThis.localStorage = previous;
     }
+  });
+});
+
+
+// Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Active abilities: mobile + keyboard', () => {
+  function fixture() {
+    const eventBus = new EventBus();
+    const skillTree = new SkillTree(eventBus);
+    const player = {
+      x: 0, y: 0, width: 14, height: 14, facingX: 1, facingY: 0,
+      hp: 100, stamina: 100, mana: 100, isAlive: true,
+      isStealthed: false, abilityInvulnerable: false,
+    };
+    const enemy = {
+      x: 68, y: 0, width: 14, hp: 1000, isAlive: true, typeName: 'dummy',
+      takeDamage(n) { this.hp = Math.max(0, this.hp - n); if (this.hp === 0) this.isAlive = false; },
+    };
+    const room = { enemies: [enemy], tilemap: { isRectBlocked: () => false } };
+    const abilities = new AbilitySystem({
+      eventBus, skillTree, player, getRoom: () => room,
+      camera: { shake() {} },
+    });
+    return { eventBus, skillTree, player, enemy, room, abilities };
+  }
+
+  it('вихрь поражает врага, тратит выносливость и уходит на перезарядку', () => {
+    const f = fixture();
+    expect(f.abilities.use('str_t3')).toBe(true);
+    expect(f.player.stamina).toBe(50);
+    for (let i = 0; i < 10; i++) f.abilities.update(.05);
+    expect(f.enemy.hp < 1000).toBe(true);
+    expect(f.abilities.use('str_t3')).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('огненный шар летит, наносит урон и расходует ману', () => {
+    const f = fixture();
+    expect(f.abilities.use('mag_t2')).toBe(true);
+    expect(f.player.mana).toBe(80);
+    for (let i = 0; i < 10; i++) f.abilities.update(.05);
+    expect(f.enemy.hp < 1000).toBe(true);
+    expect(f.abilities.use('mag_t2')).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('магия не работает при нехватке маны', () => {
+    const f = fixture();
+    f.player.mana = 0;
+    expect(f.abilities.use('mag_t2')).toBe(false);
+    expect(f.enemy.hp).toBe(1000);
+    f.abilities.destroy();
+  });
+
+  it('скрытность режет скорость обнаружения и усиливает первый удар', () => {
+    const f = fixture();
+    expect(f.abilities.use('agi_t3')).toBe(true);
+    expect(f.player.isStealthed).toBe(true);
+    f.abilities.update(.05);
+    expect(f.player.stamina < 100).toBe(true);
+    const attack = { damage: 10 };
+    f.eventBus.emit('player:attack', attack);
+    expect(attack.damage).toBe(30);
+    expect(f.player.isStealthed).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('телепорт перемещает героя, взрывает область и тратит выносливость', () => {
+    const f = fixture();
+    f.enemy.x = 250;
+    expect(f.abilities.use('agi_t4')).toBe(true);
+    expect(f.player.x).toBe(250);
+    expect(f.player.stamina).toBe(65);
+    expect(f.enemy.hp < 1000).toBe(true);
+    f.abilities.destroy();
+  });
+
+  it('отмена телепорта внутри сплошной стены не тратит ресурс', () => {
+    const f = fixture();
+    f.room.tilemap.isRectBlocked = () => true;
+    expect(f.abilities.use('agi_t4')).toBe(false);
+    expect(f.player.stamina).toBe(100);
+    f.abilities.destroy();
+  });
+
+  it('неуязвимость действует ограниченное время', () => {
+    const f = fixture();
+    expect(f.abilities.use('def_t4')).toBe(true);
+    expect(f.player.abilityInvulnerable).toBe(true);
+    for (let i = 0; i < 180; i++) f.abilities.update(.05);
+    expect(f.player.abilityInvulnerable).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('утрата навыка блокирует использование и прерывает скрытность', () => {
+    const f = fixture();
+    f.abilities.use('agi_t3');
+    f.skillTree.removeSkill('agi_t3', 1);
+    expect(f.player.isStealthed).toBe(false);
+    expect(f.abilities.use('agi_t3')).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('корректно уведомляет экранные кнопки о cooldown', () => {
+    const f = fixture();
+    let slots = null;
+    const off = f.eventBus.on('ability:status', d => { slots = d.slots; });
+    f.abilities.use('mag_t2');
+    expect(slots.find(s => s.action === 'skill2').cooldown).toBe(3);
+    expect(slots.find(s => s.action === 'skill2').available).toBe(true);
+    off();
+    f.abilities.destroy();
+  });
+
+  it('очищает эффекты при выходе со сцены', () => {
+    const f = fixture();
+    f.abilities.use('str_t4');
+    expect(f.player.abilityInvulnerable).toBe(true);
+    f.abilities.reset();
+    expect(f.player.abilityInvulnerable).toBe(false);
+    f.abilities.destroy();
   });
 });
 
