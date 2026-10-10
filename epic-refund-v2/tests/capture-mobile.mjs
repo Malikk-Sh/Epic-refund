@@ -6,7 +6,18 @@ import os from 'node:os';
 import path from 'node:path';
 const root=process.cwd(),dest=path.resolve(process.env.EPIC_SCREENSHOT_DIR||'qa-screenshots');
 const temp=await mkdtemp(path.join(os.tmpdir(),'epic-qa-'));let browser,server;
-const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
+const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaAbility(skillId) {
+    const room=this.#level.currentRoom;
+    const target=room.enemies.find(e=>e.isAlive);
+    if (target) {
+      this.#player.x=target.x-36; this.#player.y=target.y;
+      this.#player.facingX=1;this.#player.facingY=0;
+    }
+    this.#player.mana=100;
+    this.#player.stamina=100;
+    return this.#abilities.use(skillId);
+  }
+  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
 const errors=[], images=[];
 async function pause(ms){return new Promise(r=>setTimeout(r,ms));}
 try{
@@ -70,6 +81,12 @@ try{
   await go('level_02','l2_room_01');
   if(await page.evaluate(()=>window.__epicQA.qaTalk()))await snap('dialogue-gribl');
   for(const n of [16,11,6,2,0]){await page.evaluate(n=>window.__epicQA.qaSkillCount(n),n);await snap('hud-'+n+'-skills');}
+  for(const skillId of ['str_t3','mag_t2','agi_t3','str_t4','mag_t4','def_t4','agi_t4','aur_t4']){
+    await go('level_01','l1_room_02');
+    const success=await page.evaluate(id=>window.__epicQA.qaAbility(id),skillId);
+    if(!success)throw Error('Skill failed to cast during mobile QA: '+skillId);
+    await snap('ability-'+skillId);
+  }
   await page.evaluate(()=>window.__epicQA.qaDie());await snap('player-death');
   await page.setViewportSize({width:390,height:844});
   await page.reload();
