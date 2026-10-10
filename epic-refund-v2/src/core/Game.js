@@ -139,6 +139,10 @@ export class Game {
     this.#inputManager.flush();
   }
 
+  redrawFrame() {
+    this.#currentScene?.render();
+  }
+
   pause() {
     this.#paused = true;
     this.#eventBus.emit('game:pause');
