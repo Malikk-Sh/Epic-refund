@@ -46,6 +46,7 @@ export class GameScene {
   #damageTintTimer = 0;
   #roomEpoch = 0;
   #deferredRoomEvents = new Set();
+  #pausedRoomEvents = [];
   #gamePaused = false;
 
   constructor(deps) {
@@ -100,6 +101,7 @@ export class GameScene {
     this.#roomEpoch++;
     for (const timer of this.#deferredRoomEvents) clearTimeout(timer);
     this.#deferredRoomEvents.clear();
+    this.#pausedRoomEvents.length = 0;
   }
 
   #deferInRoom(fn, milliseconds) {
@@ -107,7 +109,12 @@ export class GameScene {
     const timer = setTimeout(() => {
       this.#deferredRoomEvents.delete(timer);
       if (epoch !== this.#roomEpoch || !this.#player?.isAlive ||
-          this.#completed || this.#gamePaused) return;
+          this.#completed) return;
+      if (this.#gamePaused) {
+        // Сюжетное событие не теряется из-за короткой проверки настроек.
+        this.#pausedRoomEvents.push({ epoch, fn });
+        return;
+      }
       fn();
     }, milliseconds);
     this.#deferredRoomEvents.add(timer);
@@ -263,7 +270,13 @@ export class GameScene {
     const { eventBus } = this.#deps;
     const on = (ev, fn) => this.#unsubs.push(eventBus.on(ev, fn));
     on('game:pause', () => { this.#gamePaused = true; });
-    on('game:resume', () => { this.#gamePaused = false; });
+    on('game:resume', () => {
+      this.#gamePaused = false;
+      const pending = this.#pausedRoomEvents.splice(0);
+      for (const { epoch, fn } of pending) {
+        if (epoch === this.#roomEpoch && this.#player.isAlive && !this.#completed) fn();
+      }
+    });
     on('ui:dialogue', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
     on('ui:gate', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
 
