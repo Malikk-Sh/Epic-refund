@@ -75,6 +75,7 @@ const { GateUI } = await import('../src/ui/GateUI.js');
 const { Player } = await import('../src/entities/Player.js');
 const { Renderer } = await import('../src/core/Renderer.js');
 const { Camera } = await import('../src/core/Camera.js');
+const { chooseCombatTarget, blockedLine } = await import('../src/systems/CombatTargeting.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -940,6 +941,99 @@ describe('Mobile and checkpoint regressions', () => {
 
 
 // Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Mobile assisted aiming and reliable skills', () => {
+  it('находит ближайшую цель и не пытается атаковать сквозь препятствие', () => {
+    const targets = [
+      {x:40,y:0,width:14,isAlive:true},
+      {x:0,y:26,width:14,isAlive:true},
+      {x:10,y:10,width:14,isAlive:false},
+    ];
+    const nearest = chooseCombatTarget(targets,0,0,1,0,100);
+    expect(nearest).toBe(targets[1]);
+    const visible = chooseCombatTarget(targets,0,0,1,0,100,
+      (x0,y0,x1,y1)=>x1===0);
+    expect(visible).toBe(targets[0]);
+    expect(blockedLine({isRectBlocked:(x)=>x>12 && x<24},0,0,50,0)).toBe(true);
+    expect(blockedLine({isRectBlocked:()=>false},0,0,50,0)).toBe(false);
+  });
+
+  it('на телефоне удар автоматически разворачивается к врагу сзади', () => {
+    const bus = new EventBus(), tree=new SkillTree(bus);
+    const player=new Player({eventBus:bus,skillTree:tree,
+      echoSystem:new EchoSystem(tree),combatSystem:new CombatSystem(bus)});
+    const attacks=[];
+    bus.on('player:attack',d=>attacks.push(d));
+    const input={
+      touchAssistEnabled:true,
+      isPressed:a=>a==='attackLight',
+      isHeld:()=>false,
+      getMovementVector:()=>({x:0,y:0}),
+    };
+    player.update(.016,input,null,[{x:-22,y:0,width:14,isAlive:true}]);
+    expect(attacks.length).toBe(1);
+    expect(attacks[0].dirX<0).toBe(true);
+    expect(player.aimTarget !== null).toBe(true);
+  });
+
+  it('с клавиатуры автоприцел не меняет направление удара', () => {
+    const bus = new EventBus(),tree=new SkillTree(bus);
+    const player=new Player({eventBus:bus,skillTree:tree,
+      echoSystem:new EchoSystem(tree),combatSystem:new CombatSystem(bus)});
+    const attacks=[];
+    bus.on('player:attack',d=>attacks.push(d));
+    player.update(.016,{
+      touchAssistEnabled:false,
+      isPressed:a=>a==='attackLight',isHeld:()=>false,
+      getMovementVector:()=>({x:0,y:0}),
+    },null,[{x:-22,y:0,width:14,isAlive:true}]);
+    expect(attacks[0].dirX).toBe(1);
+    expect(player.aimTarget).toBe(null);
+  });
+
+  it('магический снаряд смартфона наводится на цель сбоку', () => {
+    const bus=new EventBus(),tree=new SkillTree(bus);
+    const player={
+      x:0,y:0,width:14,height:14,facingX:1,facingY:0,
+      stamina:100,mana:100,isAlive:true,touchAimAssist:true,abilityInvulnerable:false,
+    };
+    const target={
+      x:0,y:85,width:14,isAlive:true,hp:200,
+      takeDamage(n){this.hp-=n;},
+    };
+    const room={enemies:[target],tilemap:{isRectBlocked:()=>false}};
+    const ability=new AbilitySystem({player,skillTree:tree,eventBus:bus,
+      camera:{shake(){}},getRoom:()=>room});
+    expect(ability.use('mag_t2')).toBe(true);
+    for(let i=0;i<15;i++)ability.update(.05);
+    expect(target.hp<200).toBe(true);
+    ability.destroy();
+  });
+
+  it('утрата ультимы сразу прекращает неуязвимость', () => {
+    const bus=new EventBus(),tree=new SkillTree(bus);
+    const player={x:0,y:0,facingX:1,facingY:0,stamina:100,mana:100,isAlive:true};
+    const ability=new AbilitySystem({player,skillTree:tree,eventBus:bus,
+      camera:{shake(){}},
+      getRoom:()=>({enemies:[],tilemap:{isRectBlocked:()=>false}})});
+    expect(ability.use('def_t4')).toBe(true);
+    expect(player.abilityInvulnerable).toBe(true);
+    tree.removeSkill('def_t4',1);
+    expect(player.abilityInvulnerable).toBe(false);
+    ability.destroy();
+  });
+
+  it('потеря чужого навыка не перезаряжает магический щит', () => {
+    const bus=new EventBus(),tree=new SkillTree(bus);
+    const player=new Player({eventBus:bus,skillTree:tree,
+      echoSystem:new EchoSystem(tree),combatSystem:new CombatSystem(bus)});
+    player.shieldCharges=1;
+    tree.removeSkill('str_t4',1);
+    expect(player.shieldCharges).toBe(1);
+    player.reviveFromCheckpoint({shieldCharges:0});
+    expect(player.shieldCharges).toBe(0);
+  });
+});
+
 describe('Smooth 30/60/120Hz camera', () => {
   it('камера одинаково следует за целью при любом FPS', () => {
     const simulate = fps => {
@@ -1053,6 +1147,10 @@ describe('Combat responsiveness and Retina mobile rendering', () => {
       expect(canvas.width > cssWidth).toBe(true);
       renderer.beginFrame(); renderer.endFrame();
       expect(lastScale > renderer.scale).toBe(true);
+      renderer.setPixelDensityCap(1);
+      expect(canvas.width).toBe(cssWidth);
+      renderer.setPixelDensityCap(2);
+      expect(canvas.width > cssWidth).toBe(true);
       expect(renderer.screenToLogical(422,195).x > 0).toBe(true);
       renderer.destroy();
       expect(listeners.size).toBe(0);
