@@ -21,6 +21,24 @@ export const BALANCE = {
     staminaRegenDelay: 0.8,
   },
 
+  abilities: {
+    projectileSpawnOffset: 12,
+    projectileHitRadius: 5,
+    projectileMaxDistance: 500,
+    teleportMinDistance: 18,
+    teleportStep: 8,
+    teleportImpactRadius: 50,
+    explosionFlashDuration: 0.36,
+    flashVisualRadius: 74,
+    shieldVisualRadius: 22,
+    stealthVisualRadius: 15,
+    meteorAngleStep: 2.39996,
+    meteorFallbackRadius: 72,
+    annihilationTickRate: 0.5,
+    cooldownRefreshInterval: 0.15,
+    maxSimulationStep: 0.05,
+  },
+
   combat: {
     iFrameDuration: 0.3,     // Неуязвимость при перекате (с "Акробатикой")
     iFrameDurationBase: 0.15,// Без навыка — короткие i-frames при получении урона
