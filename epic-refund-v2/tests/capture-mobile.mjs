@@ -39,6 +39,15 @@ try{
   await snap('00-mobile-landscape');
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
+  // Проверяем реальный UI mute toggle, включая сохранение настройки.
+  const soundToggle = page.locator('#settings-sound-toggle');
+  if(!await soundToggle.isChecked()) throw Error('Sound should be enabled by default');
+  await soundToggle.uncheck();
+  if(await page.evaluate(()=>localStorage.getItem('epic_refund_sound'))!=='false')
+    throw Error('Mute preference not persisted');
+  await soundToggle.check();
+  if(await page.evaluate(()=>localStorage.getItem('epic_refund_sound'))!=='true')
+    throw Error('Unmute preference not persisted');
   await snap('01-mobile-settings');
   await page.locator('#settings-fullscreen').click();
   const fullscreen = await page.evaluate(() => ({
