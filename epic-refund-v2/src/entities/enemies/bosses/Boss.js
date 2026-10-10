@@ -28,13 +28,22 @@ export class Boss extends Enemy {
 
     // Урон проходит вне update (через takeDamage), поэтому переход
     // «живой → мёртвый» мы ловим по флагу #wasAlive, а не по снапшоту.
-    if (!this.isAlive && this.#wasAlive) {
-      this.#wasAlive = false;
-      this.#eventBus?.emit('boss:defeat', {
-        bossId: this.typeName,
-        displayName: this.displayName,
-      });
-    }
+    if (!this.isAlive) this.#emitDefeat();
+  }
+
+  takeDamage(amount, sourceX, sourceY) {
+    super.takeDamage(amount, sourceX, sourceY);
+    // Комната перестаёт обновлять мёртвых врагов в тот же кадр.
+    if (!this.isAlive) this.#emitDefeat();
+  }
+
+  #emitDefeat() {
+    if (!this.#wasAlive) return;
+    this.#wasAlive = false;
+    this.#eventBus?.emit('boss:defeat', {
+      bossId: this.typeName,
+      displayName: this.displayName,
+    });
   }
 
   #checkPhaseTransition() {
