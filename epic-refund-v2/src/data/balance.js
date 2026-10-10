@@ -27,6 +27,7 @@ export const BALANCE = {
     projectileSpawnOffset: 12,
     projectileHitRadius: 5,
     projectileMaxDistance: 500,
+    projectileAimRange: 230,
     teleportMinDistance: 18,
     teleportStep: 8,
     teleportImpactRadius: 50,
