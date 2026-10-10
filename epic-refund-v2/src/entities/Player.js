@@ -61,6 +61,8 @@ export class Player {
 
   // Магический щит
   shieldCharges = 0;
+  isStealthed = false;
+  abilityInvulnerable = false;
 
   // Колбэк на атаку (регистрируется сценой)
   onAttack = null;
@@ -184,7 +186,7 @@ export class Player {
     const echo = this.#echoSystem.getPassiveBonuses();
     const speedMod = echo.walkSpeedMultiplier;
 
-    const speed = B.baseSpeed * speedMod;
+    const speed = B.baseSpeed * speedMod * (this.isStealthed ? 0.6 : 1);
 
     this.vx = mv.x * speed;
     this.vy = mv.y * speed;
@@ -362,7 +364,7 @@ export class Player {
 
   #updateStamina(dt) {
     // Регенерация вне активных действий
-    if (this.#attackCooldown <= 0 && this.#state !== 'roll') {
+    if (this.#attackCooldown <= 0 && this.#state !== 'roll' && !this.isStealthed) {
       this.stamina = Math.min(this.maxStamina, this.stamina + B.staminaRegen * dt);
     }
   }
@@ -380,7 +382,7 @@ export class Player {
   // ===== ПОЛУЧЕНИЕ УРОНА =====
 
   takeDamage(rawDamage, sourceX, sourceY) {
-    if (this.#iFrameTimer > 0) return false;
+    if (this.#iFrameTimer > 0 || this.abilityInvulnerable) return false;
 
     const echo = this.#echoSystem.getPassiveBonuses();
     const result = this.#combatSystem.calculateDamageToPlayer({
@@ -474,6 +476,8 @@ export class Player {
     this.#isParrying = false;
     this.#isRolling = false;
     this.#deathSaveUsed = false;
+    this.isStealthed = false;
+    this.abilityInvulnerable = false;
     this.#applySkillStats();
     this.hp = Math.max(1, Math.min(this.maxHP, state.hp ?? this.maxHP));
     this.mana = Math.max(0, Math.min(this.maxMana, state.mana ?? this.maxMana));
