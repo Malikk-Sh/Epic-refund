@@ -19,6 +19,7 @@ export class Renderer {
   #offsetX = 0;
   #offsetY = 0;
   #pixelRatio = 1;
+  #pixelDensityCap = 2;
   #resizeBound = () => this.#resize();
   #orientationBound = () => this.#resize();
 
@@ -54,7 +55,7 @@ export class Renderer {
     const cssW = Math.max(1, Math.floor(this.#logicalWidth * this.#scale));
     const cssH = Math.max(1, Math.floor(this.#logicalHeight * this.#scale));
     const maxRatio = Math.sqrt(3_200_000 / (cssW * cssH));
-    this.#pixelRatio = Math.max(1, Math.min(2, window.devicePixelRatio || 1, maxRatio));
+    this.#pixelRatio = Math.max(1, Math.min(this.#pixelDensityCap, window.devicePixelRatio || 1, maxRatio));
     this.#canvas.width = Math.round(cssW * this.#pixelRatio);
     this.#canvas.height = Math.round(cssH * this.#pixelRatio);
     this.#canvas.style.width = cssW + 'px';
@@ -111,6 +112,12 @@ export class Renderer {
   get logicalHeight() { return this.#logicalHeight; }
   get scale() { return this.#scale; }
   get pixelRatio() { return this.#pixelRatio; }
+
+  setPixelDensityCap(value) {
+    this.#pixelDensityCap = value >= 2 ? 2 : 1;
+    this.#resize();
+  }
+  get pixelDensityCap() { return this.#pixelDensityCap; }
 
   destroy() {
     window.removeEventListener('resize', this.#resizeBound);
