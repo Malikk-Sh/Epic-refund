@@ -233,7 +233,10 @@ export class WorldRenderer {
     const visible = player.isInvulnerable ?
       (Math.floor(player.iFrameTimer * 30) % 2 === 0) : true;
 
-    if (!visible) return;
+    // Не скрывать Кейна целиком во время i-frames: на маленьком дисплее
+    // потеря силуэта делает позицию персонажа нечитаемой.
+    ctx.save();
+    if (!visible) ctx.globalAlpha *= 0.5;
 
     // Цвет зависит от фазы
     const phaseColors = {
@@ -267,6 +270,7 @@ export class WorldRenderer {
       ctx.arc(screen.x, screen.y, 12, 0, Math.PI * 2);
       ctx.stroke();
     }
+    ctx.restore();
   }
 
   #drawAttackArc(ctx, player, cam) {
