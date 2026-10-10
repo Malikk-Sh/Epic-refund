@@ -56,6 +56,23 @@ export class WorldRenderer {
         this.#drawNPC(ctx, entity, cam);
       }
     }
+
+    // Маленький ненавязчивый ромб показывает, куда попадёт касание атаки.
+    // Для клавиатуры / мыши автоприцел не включается.
+    if (player.touchAimAssist && player.aimTarget?.isAlive) {
+      const { x, y } = cam.worldToScreen(player.aimTarget.x, player.aimTarget.y);
+      const r = Math.max(13, player.aimTarget.width * cam.zoom * .5 + 5);
+      ctx.save();
+      ctx.strokeStyle = '#e8d38b';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, y - r); ctx.lineTo(x + 5, y - r + 4);
+      ctx.moveTo(x + r, y); ctx.lineTo(x + r - 4, y + 5);
+      ctx.moveTo(x, y + r); ctx.lineTo(x - 5, y + r - 4);
+      ctx.moveTo(x - r, y); ctx.lineTo(x - r + 4, y - 5);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   // === ТАЙЛМАП ===
