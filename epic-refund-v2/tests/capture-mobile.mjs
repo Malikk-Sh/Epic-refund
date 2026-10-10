@@ -88,6 +88,18 @@ try{
     throw Error('Delayed dialogue leaked into another room');
   await page.evaluate(()=>window.__epicQA.qaSetNarrativeMute(true));
   await snap('dialogue-no-stale-room-event');
+
+  // Событие должно дождаться выхода из меню, а не потеряться.
+  await page.evaluate(()=>window.__epicGame.pause('qa'));
+  await page.evaluate(()=>window.__epicQA.qaQueueDialogue());
+  await page.waitForTimeout(220);
+  if(await page.evaluate(()=>window.__epicQA.qaDialogueVisible()))
+    throw Error('Narrative appeared while gameplay was paused');
+  await page.evaluate(()=>window.__epicGame.resume('qa'));
+  await page.waitForTimeout(30);
+  if(!await page.evaluate(()=>window.__epicQA.qaDialogueVisible()))
+    throw Error('Narrative was lost instead of resuming after pause');
+  await snap('dialogue-returns-after-pause');
   await go('level_01','l1_room_01');
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
