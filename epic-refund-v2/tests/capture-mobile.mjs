@@ -59,8 +59,10 @@ try{
    ['level_02','l2_room_06'],['level_03','l3_room_03'],['level_03','l3_room_07']]){
     await go(level,id);
     if(!await page.evaluate(()=>window.__epicQA.qaShowGate()))throw Error('Gate cannot be shown: '+id);
+    if(!await page.locator('#mobile-gate-nav').evaluate(el=>el.classList.contains('gate-nav-visible')))throw Error('Mobile Gate navigation missing: '+id);
     await snap('gate-'+id+'-select');
     await page.evaluate(()=>window.__epicQA.qaOpenGate());
+    if(await page.locator('#mobile-gate-nav').evaluate(el=>el.classList.contains('gate-nav-visible')))throw Error('Mobile Gate navigation remains after closing: '+id);
     await snap('gate-'+id+'-open');
   }
   await go('level_01','l1_room_06');
