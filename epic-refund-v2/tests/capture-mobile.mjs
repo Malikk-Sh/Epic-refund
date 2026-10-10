@@ -15,10 +15,10 @@ try{
   await cp(root,folder,{recursive:true,filter:p=>!p.split(path.sep).includes('node_modules')&&!p.split(path.sep).includes('qa-screenshots')});
   const filename=path.join(folder,'src/ui/GameScene.js');
   let code=await readFile(filename,'utf8');
-  const init='    this.#saveCheckpoint();\n  }\n\n  // Загрузка/смена уровня.';
+  const init='    this.#saveCheckpoint();\n  }\n\n  // Изолируем';
   if(!code.includes(init)||!code.includes('  #announceLevel(levelKey) {')||!code.includes('  destroy() {'))
     throw Error('QA hooks could not be installed: source changed');
-  code=code.replace(init,'    this.#saveCheckpoint();\n    window.__epicQA=this;\n    // QA-only: narrative setTimeouts from prior rooms must not steal touch input.\n    this.__qaMuteNarrative=true;\n    this.#deps.eventBus.on("player:speaks",()=>{ if(this.__qaMuteNarrative && this.#dialogue.isActive) this.#dialogue.hide(); });\n  }\n\n  // Загрузка/смена уровня.');
+  code=code.replace(init,'    this.#saveCheckpoint();\n    window.__epicQA=this;\n    // QA-only: narrative timeouts from prior rooms must not steal touch input.\n    this.__qaMuteNarrative=true;\n    this.#deps.eventBus.on("player:speaks",()=>{ if(this.__qaMuteNarrative && this.#dialogue.isActive) this.#dialogue.hide(); });\n  }\n\n  // Изолируем');
   code=code.replace('  #announceLevel(levelKey) {',"  #announceLevel(levelKey) {\n    if (new URLSearchParams(location.search).has('qa')) return;");
   code=code.replace('  destroy() {',qa+'\n  destroy() {');
   await writeFile(filename,code);
