@@ -70,6 +70,7 @@ const { SaveManager } = await import('../src/core/SaveManager.js');
 const { HUD } = await import('../src/ui/HUD.js');
 const { AbilitySystem } = await import('../src/systems/AbilitySystem.js');
 const { drawHeroArt, drawEnemyArt, drawNpcArt } = await import('../src/render/ActorArt.js');
+const { DialogueSystem } = await import('../src/ui/DialogueSystem.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -935,6 +936,44 @@ describe('Mobile and checkpoint regressions', () => {
 
 
 // Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Mobile dialogue UI', () => {
+  it('сообщает сенсорному слою начало и конец монолога', () => {
+    const bus = new EventBus();
+    const visible = [];
+    bus.on('ui:dialogue', state => visible.push(state.visible));
+    const dialogue = new DialogueSystem({}, bus);
+    dialogue.show('Кейн', 'Воспоминание', 4);
+    expect(visible[0]).toBe(true);
+    dialogue.hide();
+    expect(visible[1]).toBe(false);
+  });
+
+  it('поднимает текст диалога над экранной зоной сенсорных кнопок', () => {
+    const old = globalThis.document;
+    const rects = [];
+    const ctx = new Proxy({}, {
+      get(obj, k) {
+        if (k === 'fillRect') return (x,y,w,h) => rects.push({x,y,w,h});
+        if (k === 'measureText') return t => ({ width: String(t).length * 7 });
+        return obj[k] ?? (() => {});
+      },
+      set(obj,k,v){obj[k]=v; return true;},
+    });
+    try {
+      globalThis.document = {body:{classList:{contains: n => n === 'touch-active'}}};
+      const bus = new EventBus();
+      const dialogue = new DialogueSystem({ ctx, logicalWidth: 768, logicalHeight: 432 }, bus);
+      dialogue.show('Кейн', 'Прошлое не вернуть.');
+      dialogue.draw();
+      expect(rects.length > 0).toBe(true);
+      expect(rects[0].y + rects[0].h < 330).toBe(true);
+      dialogue.hide();
+    } finally {
+      globalThis.document = old;
+    }
+  });
+});
+
 describe('Procedural pixel art and compact HUD', () => {
   function canvas() {
     const events = [];
