@@ -19,6 +19,7 @@ export class AudioManager {
 
   #eventBus;
   #initialized = false;
+  #lastImpactAt = 0;
 
   constructor(eventBus) {
     this.#eventBus = eventBus;
@@ -30,13 +31,18 @@ export class AudioManager {
       this.#ensureContext();
       window.removeEventListener('click', init);
       window.removeEventListener('keydown', init);
+      window.removeEventListener('pointerdown', init);
     };
     window.addEventListener('click', init);
     window.addEventListener('keydown', init);
+    window.addEventListener('pointerdown', init);
   }
 
   #ensureContext() {
-    if (this.#initialized) return;
+    if (this.#initialized) {
+      if (this.#ctx?.state === 'suspended') this.#ctx.resume().catch(() => {});
+      return;
+    }
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
@@ -72,6 +78,22 @@ export class AudioManager {
     on('player:deathSave',   () => this.play('save_tick'));
     on('room:cleared',       () => this.play('room_clear'));
     on('room:enter',         () => this.play('step'));
+    on('ability:cast', ({ skillId, kind }) => {
+      const sound = kind === 'backstab' ? 'backstab' :
+        skillId.startsWith('mag') ? 'cast_magic' :
+        skillId === 'agi_t3' || skillId === 'agi_t4' ? 'cast_shadow' :
+        skillId.startsWith('def') ? 'cast_shield' : 'cast_blade';
+      this.play(sound);
+    });
+    on('ability:blocked', () => this.play('skill_fail'));
+    // Сильные AoE-умения могут попасть по десяткам врагов: микшируем
+    // максимум один импакт каждые 75 мс вместо перегрузки динамика телефона.
+    on('ability:hit', () => {
+      const now = performance.now();
+      if (now - this.#lastImpactAt < 75) return;
+      this.#lastImpactAt = now;
+      this.play('impact_spell');
+    });
   }
 
   // === Воспроизведение ===
@@ -123,6 +145,31 @@ export class AudioManager {
   // === Синтетические звуки ===
 
   #registerDefaultSynths() {
+    // Параметрические свипы с разной огибающей, без загрузки аудиофайлов.
+    const addCue = (id, startHz, endHz, duration, type, peak) => {
+      this.#synthDefs.set(id, (ctx, out) => {
+        const start = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(startHz, start);
+        osc.frequency.exponentialRampToValueAtTime(endHz, start + duration);
+        gain.gain.setValueAtTime(.001, start);
+        gain.gain.linearRampToValueAtTime(peak, start + Math.min(.02, duration * .2));
+        gain.gain.exponentialRampToValueAtTime(.001, start + duration);
+        osc.connect(gain);
+        gain.connect(out);
+        osc.start(start);
+        osc.stop(start + duration + .01);
+      });
+    };
+    addCue('cast_magic', 220, 820, .33, 'triangle', .21);
+    addCue('cast_shadow', 630, 115, .26, 'sine', .16);
+    addCue('cast_blade', 180, 720, .34, 'sawtooth', .15);
+    addCue('cast_shield', 450, 1120, .46, 'sine', .19);
+    addCue('impact_spell', 740, 135, .15, 'triangle', .12);
+    addCue('backstab', 160, 52, .18, 'sawtooth', .24);
+
     // Лёгкий свист меча — короткий шум с полосовым фильтром
     this.#synthDefs.set('swing_light', (ctx, out) => {
       const osc = ctx.createOscillator();
