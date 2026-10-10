@@ -193,5 +193,6 @@ export class SkillTree {
       }
     }
     this.#lostOrder = [...data.lostOrder];
+    this.#eventBus.emit('skill:restored', { remainingCount: this.getActiveSkillCount() });
   }
 }
