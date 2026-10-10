@@ -96,6 +96,7 @@ export class GameScene {
   #loadLevel(levelKey, startRoomId = null, fromDirection = null) {
     const d = this.#deps;
     this.#abilities?.reset();
+    this.#player.clearBufferedAction();
 
     this.#currentLevelKey = levelKey;
     this.#level = createLevelByKey(levelKey, {
@@ -235,6 +236,8 @@ export class GameScene {
   #setupEventHandlers() {
     const { eventBus } = this.#deps;
     const on = (ev, fn) => this.#unsubs.push(eventBus.on(ev, fn));
+    on('ui:dialogue', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
+    on('ui:gate', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
 
     // Атаки — копим для проверки хитбоксов
     on('player:attack', (data) => {
@@ -450,6 +453,12 @@ export class GameScene {
 
     // E — взаимодействие с NPC / Вратами.
     if (input.isPressed('interact')) this.#handleInteract();
+    // Диалог открылся синхронно — не проводим лишний боевой тик под модальным UI.
+    if (this.#gateUI.visible || this.#dialogue.isActive) {
+      this.#player.clearBufferedAction();
+      this.#notifications.update(dt);
+      return;
+    }
 
     // Основной апдейт
     const room = this.#level.currentRoom;
