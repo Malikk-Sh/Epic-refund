@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 const root=process.cwd(),dest=path.resolve(process.env.EPIC_SCREENSHOT_DIR||'qa-screenshots');
 const temp=await mkdtemp(path.join(os.tmpdir(),'epic-qa-'));let browser,server;
-const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
+const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
 const errors=[], images=[];
 async function pause(ms){return new Promise(r=>setTimeout(r,ms));}
 try{
@@ -40,6 +40,14 @@ try{
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
   await snap('01-mobile-settings');
+  await page.locator('#settings-fullscreen').click();
+  const fullscreen = await page.evaluate(() => ({
+    active: Boolean(document.fullscreenElement),
+    message: document.querySelector('#settings-status').textContent.trim(),
+  }));
+  if (!fullscreen.active && !fullscreen.message) throw Error('Fullscreen control gave no result');
+  await snap('02-fullscreen-toggle');
+  if (fullscreen.active) await page.locator('#settings-fullscreen').click();
   await page.locator('#settings-close').click();
   for(const [level,n] of [['level_01',6],['level_02',7],['level_03',8]]){
     for(let i=1;i<=n;i++){
