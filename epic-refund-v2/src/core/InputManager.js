@@ -37,6 +37,7 @@ export class InputManager {
   #pressed = new Set();
   #released = new Set();
   #virtualHeld = new Set();
+  #touchAssistEnabled = false;
   #onKeyDownBound = this.#onKeyDown.bind(this);
   #onKeyUpBound = this.#onKeyUp.bind(this);
   #onBlurBound = this.#onBlur.bind(this);
@@ -92,6 +93,9 @@ export class InputManager {
   releaseAllVirtual() {
     for (const action of [...this.#virtualHeld]) this.releaseVirtual(action);
   }
+
+  setTouchAssistEnabled(value) { this.#touchAssistEnabled = Boolean(value); }
+  get touchAssistEnabled() { return this.#touchAssistEnabled; }
 
   isHeld(action)     { return this.#held.has(action) || this.#virtualHeld.has(action); }
   isPressed(action)  { return this.#pressed.has(action); }
