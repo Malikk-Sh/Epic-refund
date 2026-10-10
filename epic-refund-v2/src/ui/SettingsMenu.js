@@ -7,6 +7,7 @@ export class SettingsMenu {
   #fullscreen;
   #status;
   #touchToggle;
+  #soundToggle;
   #open = false;
 
   constructor(game, controls) {
@@ -31,6 +32,7 @@ export class SettingsMenu {
       '  <p class="settings-description">Настройте игру под свой экран</p>',
       '  <button type="button" class="settings-primary" id="settings-fullscreen">⛶ Полный экран</button>',
       '  <label class="settings-touch"><input type="checkbox" id="settings-touch-toggle"> Сенсорное управление</label>',
+      '  <label class="settings-touch"><input type="checkbox" id="settings-sound-toggle"> Звуковые эффекты</label>',
       '  <p id="settings-status" role="status" aria-live="polite"></p>',
       '  <p class="settings-hint">На iPhone полный экран обычно доступен через «На экран Домой» в меню «Поделиться».</p>',
       '</div>',
@@ -39,6 +41,12 @@ export class SettingsMenu {
     this.#fullscreen = this.#panel.querySelector('#settings-fullscreen');
     this.#touchToggle = this.#panel.querySelector('#settings-touch-toggle');
     this.#status = this.#panel.querySelector('#settings-status');
+    this.#soundToggle = this.#panel.querySelector('#settings-sound-toggle');
+    try {
+      const sound = localStorage.getItem('epic_refund_sound');
+      if (sound !== null) this.#game.audioManager.setMuted(sound === 'false');
+    } catch {}
+    this.#soundToggle.checked = !this.#game.audioManager.isMuted;
     this.#toggle.addEventListener('click', this.#show);
     this.#panel.querySelector('#settings-close').addEventListener('click', this.#hide);
     this.#panel.addEventListener('click', (event) => {
@@ -47,6 +55,10 @@ export class SettingsMenu {
     this.#fullscreen.addEventListener('click', this.#toggleFullscreen);
     this.#touchToggle.addEventListener('change', () => {
       this.#controls.setVisible(this.#touchToggle.checked);
+    });
+    this.#soundToggle.addEventListener('change', () => {
+      this.#game.audioManager.setMuted(!this.#soundToggle.checked);
+      try { localStorage.setItem('epic_refund_sound', String(this.#soundToggle.checked)); } catch {}
     });
     document.addEventListener('fullscreenchange', this.#syncFullscreen);
     document.addEventListener('webkitfullscreenchange', this.#syncFullscreen);
@@ -58,6 +70,7 @@ export class SettingsMenu {
     this.#open = true;
     this.#status.textContent = '';
     this.#touchToggle.checked = this.#controls.visible;
+    this.#soundToggle.checked = !this.#game.audioManager.isMuted;
     this.#panel.hidden = false;
     this.#toggle.setAttribute('aria-expanded', 'true');
     this.#game.pause();
