@@ -63,6 +63,7 @@ export class Player {
 
   // Магический щит
   shieldCharges = 0;
+  #hasShieldSkill = false;
   isStealthed = false;
   abilityInvulnerable = false;
 
@@ -102,7 +103,11 @@ export class Player {
     if (previousMaxMana === 0 && this.maxMana > 0) this.mana = this.maxMana;
     if (this.mana > this.maxMana) this.mana = this.maxMana;
 
-    this.shieldCharges = this.#skillTree.isActive('def_t3') ? 3 : 0;
+    const hasShield = this.#skillTree.isActive('def_t3');
+    // Потеря другого навыка не может бесплатно восстановить щит до 3 зарядов.
+    if (hasShield && !this.#hasShieldSkill) this.shieldCharges = 3;
+    if (!hasShield) this.shieldCharges = 0;
+    this.#hasShieldSkill = hasShield;
   }
 
   // ===== ГЛАВНЫЙ ЦИКЛ =====
@@ -518,6 +523,7 @@ export class Player {
     this.hp = Math.max(1, Math.min(this.maxHP, state.hp ?? this.maxHP));
     this.mana = Math.max(0, Math.min(this.maxMana, state.mana ?? this.maxMana));
     this.stamina = Math.max(0, Math.min(this.maxStamina, state.stamina ?? this.maxStamina));
+    if (this.#hasShieldSkill) this.shieldCharges = Math.max(0, Math.min(3, state.shieldCharges ?? 3));
   }
 
   resetForNewLevel() {
