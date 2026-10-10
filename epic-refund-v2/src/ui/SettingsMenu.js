@@ -8,6 +8,7 @@ export class SettingsMenu {
   #status;
   #touchToggle;
   #soundToggle;
+  #qualityToggle;
   #open = false;
 
   constructor(game, controls) {
@@ -33,6 +34,7 @@ export class SettingsMenu {
       '  <button type="button" class="settings-primary" id="settings-fullscreen">⛶ Полный экран</button>',
       '  <label class="settings-touch"><input type="checkbox" id="settings-touch-toggle"> Сенсорное управление</label>',
       '  <label class="settings-touch"><input type="checkbox" id="settings-sound-toggle"> Звуковые эффекты</label>',
+      '  <label class="settings-touch"><input type="checkbox" id="settings-quality-toggle"> Чёткая графика (Retina)</label>',
       '  <p id="settings-status" role="status" aria-live="polite"></p>',
       '  <p class="settings-hint">На iPhone полный экран обычно доступен через «На экран Домой» в меню «Поделиться».</p>',
       '</div>',
@@ -42,11 +44,18 @@ export class SettingsMenu {
     this.#touchToggle = this.#panel.querySelector('#settings-touch-toggle');
     this.#status = this.#panel.querySelector('#settings-status');
     this.#soundToggle = this.#panel.querySelector('#settings-sound-toggle');
+    this.#qualityToggle = this.#panel.querySelector('#settings-quality-toggle');
+    try {
+      if (localStorage.getItem('epic_refund_retina') === 'false')
+        this.#game.renderer.setPixelDensityCap(1);
+    } catch {}
+    this.#qualityToggle.checked = this.#game.renderer.pixelDensityCap > 1;
     try {
       const sound = localStorage.getItem('epic_refund_sound');
       if (sound !== null) this.#game.audioManager.setMuted(sound === 'false');
     } catch {}
     this.#soundToggle.checked = !this.#game.audioManager.isMuted;
+    this.#qualityToggle.checked = this.#game.renderer.pixelDensityCap > 1;
     this.#toggle.addEventListener('click', this.#show);
     this.#panel.querySelector('#settings-close').addEventListener('click', this.#hide);
     this.#panel.addEventListener('click', (event) => {
@@ -55,6 +64,10 @@ export class SettingsMenu {
     this.#fullscreen.addEventListener('click', this.#toggleFullscreen);
     this.#touchToggle.addEventListener('change', () => {
       this.#controls.setVisible(this.#touchToggle.checked);
+    });
+    this.#qualityToggle.addEventListener('change', () => {
+      this.#game.renderer.setPixelDensityCap(this.#qualityToggle.checked ? 2 : 1);
+      try { localStorage.setItem('epic_refund_retina', String(this.#qualityToggle.checked)); } catch {}
     });
     this.#soundToggle.addEventListener('change', () => {
       this.#game.audioManager.setMuted(!this.#soundToggle.checked);
