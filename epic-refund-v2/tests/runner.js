@@ -75,6 +75,7 @@ const { GateUI } = await import('../src/ui/GateUI.js');
 const { Player } = await import('../src/entities/Player.js');
 const { Renderer } = await import('../src/core/Renderer.js');
 const { Camera } = await import('../src/core/Camera.js');
+const { Game } = await import('../src/core/Game.js');
 const { WorldRenderer } = await import('../src/render/WorldRenderer.js');
 const { chooseCombatTarget, blockedLine } = await import('../src/systems/CombatTargeting.js');
 
@@ -1032,6 +1033,39 @@ describe('Mobile assisted aiming and reliable skills', () => {
     expect(player.shieldCharges).toBe(1);
     player.reviveFromCheckpoint({shieldCharges:0});
     expect(player.shieldCharges).toBe(0);
+  });
+});
+
+describe('Independent pause reasons on mobile', () => {
+  it('Настройки и скрытая вкладка не снимают друг у друга паузу', () => {
+    const game = new Game();
+    game.pause('settings');
+    game.pause('visibility');
+    expect(game.isPaused).toBe(true);
+    game.resume('visibility');
+    expect(game.isPaused).toBe(true);
+    expect(game.pauseReasons).toContain('settings');
+    game.resume('settings');
+    expect(game.isPaused).toBe(false);
+  });
+
+  it('Открытие другого модального окна не дублирует причину паузы', () => {
+    const game = new Game();
+    game.pause('settings');
+    game.pause('settings');
+    expect(game.pauseReasons.length).toBe(1);
+    game.resume('settings');
+    expect(game.isPaused).toBe(false);
+  });
+
+  it('Закрытие настроек в скрытой вкладке не возобновляет игру', () => {
+    const game = new Game();
+    game.pause('visibility');
+    game.pause('settings');
+    game.resume('settings');
+    expect(game.isPaused).toBe(true);
+    game.resume('visibility');
+    expect(game.isPaused).toBe(false);
   });
 });
 
