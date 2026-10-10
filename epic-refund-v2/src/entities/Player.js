@@ -40,6 +40,8 @@ export class Player {
   #rollCooldown = 0;
   #iFrameTimer = 0;
   #combatTimer = 0;
+  #bufferedAction = null;
+  #bufferTimer = 0;
   #parryWindowTimer = 0;
 
   // Комбо
@@ -110,6 +112,7 @@ export class Player {
 
     this.#stateTimer += dt;
     this.#updateTimers(dt);
+    this.#captureAction(input);
 
     if (this.#state === 'roll') {
       this.#updateRoll(dt, tilemap);
@@ -131,6 +134,8 @@ export class Player {
     if (this.#rollCooldown > 0)   this.#rollCooldown -= dt;
     if (this.#iFrameTimer > 0)    this.#iFrameTimer -= dt;
     if (this.#comboTimer > 0)     this.#comboTimer -= dt;
+    if (this.#bufferTimer > 0) this.#bufferTimer = Math.max(0, this.#bufferTimer - dt);
+    if (this.#bufferTimer === 0) this.#bufferedAction = null;
     if (this.#parryWindowTimer > 0) {
       this.#parryWindowTimer -= dt;
       if (this.#parryWindowTimer <= 0) this.#isParrying = false;
@@ -155,30 +160,56 @@ export class Player {
     }
   }
 
+  // Любое краткое касание во время атаки / переката / стана попадёт в
+  // следующее свободное окно. Иначе короткое касание теряется при 60 FPS.
+  #captureAction(input) {
+    for (const action of ['roll', 'skill4', 'skill3', 'skill2', 'skill1',
+                          'attackHeavy', 'attackLight']) {
+      if (input.isPressed(action)) {
+        this.#bufferedAction = action;
+        this.#bufferTimer = B.inputBufferWindow;
+        return;
+      }
+    }
+  }
+
   #handleInput(input) {
-    // Атаки
-    if (input.isPressed('attackLight') && this.#attackCooldown <= 0 &&
-        this.stamina >= BC.staminaCostLight) {
-      this.#tryLightAttack();
-      return;
-    }
-
-    if (input.isPressed('attackHeavy') && this.#attackCooldown <= 0) {
-      this.#tryHeavyOrParry();
-      return;
-    }
-
-    // Перекат
-    if (input.isPressed('roll') && this.#rollCooldown <= 0 && this.stamina >= BC.staminaCostRoll) {
+    const action = this.#bufferedAction;
+    if (action === 'roll' &&
+        this.#rollCooldown <= 0 && this.stamina >= BC.staminaCostRoll) {
+      this.clearBufferedAction();
       this.#tryRoll(input);
       return;
     }
+    if (action === 'attackLight' && this.#attackCooldown <= 0 &&
+        this.stamina >= BC.staminaCostLight) {
+      this.clearBufferedAction();
+      this.#tryLightAttack();
+      return;
+    }
+    if (action === 'attackHeavy' && this.#attackCooldown <= 0) {
+      this.clearBufferedAction();
+      this.#tryHeavyOrParry();
+      return;
+    }
+    const skills = { skill1: 'str_t3', skill2: 'mag_t2', skill3: 'agi_t3' };
+    if (action === 'skill4' || skills[action]) {
+      this.clearBufferedAction();
+      if (action === 'skill4') this.#tryUltima();
+      else this.#trySkill(skills[action]);
+      return;
+    }
+    // Удержание атаки = новая атака после cooldown. Это особенно важно
+    // на телефонах: не нужно многократно тыкать в крошечную кнопку.
+    if (!action && input.isHeld('attackLight') &&
+        this.#attackCooldown <= 0 && this.stamina >= BC.staminaCostLight) {
+      this.#tryLightAttack();
+    }
+  }
 
-    // Навыки
-    if (input.isPressed('skill1')) this.#trySkill('str_t3');
-    if (input.isPressed('skill2')) this.#trySkill('mag_t2');
-    if (input.isPressed('skill3')) this.#trySkill('agi_t3');
-    if (input.isPressed('skill4')) this.#tryUltima();
+  clearBufferedAction() {
+    this.#bufferedAction = null;
+    this.#bufferTimer = 0;
   }
 
   #applyMovement(dt, input, tilemap) {
@@ -473,6 +504,7 @@ export class Player {
     this.#iFrameTimer = 1;
     this.#attackCooldown = 0;
     this.#rollCooldown = 0;
+    this.clearBufferedAction();
     this.#isParrying = false;
     this.#isRolling = false;
     this.#deathSaveUsed = false;
