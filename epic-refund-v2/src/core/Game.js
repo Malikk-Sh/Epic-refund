@@ -38,7 +38,11 @@ export class Game {
   #spriteRegistry;
 
   #currentScene = null;
-  #paused = false;
+  #pauseReasons = new Set();
+  #onVisibilityChange = () => {
+    if (document.hidden) this.pause('visibility');
+    else this.resume('visibility');
+  };
   #lastTime = 0;
   #rafId = null;
   #debugMode = false;
@@ -74,10 +78,7 @@ export class Game {
     this.#spriteRegistry = new SpriteRegistry();
 
     // Паузу на видимость вкладки
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.pause();
-      else this.resume();
-    });
+    document.addEventListener('visibilitychange', this.#onVisibilityChange);
 
     if (this.#debugMode) this.#setupDebug();
 
@@ -121,7 +122,11 @@ export class Game {
     this.#lastTime = timestamp;
     dt = Math.min(dt, MAX_DELTA);
 
-    if (this.#paused) return;
+    if (this.#pauseReasons.size) {
+      // Не проигрываем накопленные нажатия при закрытии модального окна.
+      this.#inputManager.flush();
+      return;
+    }
 
     // Обновление
     this.#currentScene?.update(dt, this.#inputManager);
@@ -143,19 +148,29 @@ export class Game {
     this.#currentScene?.render();
   }
 
-  pause() {
-    this.#paused = true;
-    this.#eventBus.emit('game:pause');
+  // Источники паузы независимы: скрытие вкладки не должно автоматически
+  // возобновлять игру, пока открыто меню настроек (и наоборот).
+  pause(reason = 'manual') {
+    const wasPlaying = this.#pauseReasons.size === 0;
+    this.#pauseReasons.add(reason);
+    if (wasPlaying) this.#eventBus?.emit('game:pause', { reason });
   }
 
-  resume() {
-    this.#paused = false;
-    this.#lastTime = performance.now();
-    this.#eventBus.emit('game:resume');
+  resume(reason = 'manual') {
+    const wasPaused = this.#pauseReasons.size > 0;
+    this.#pauseReasons.delete(reason);
+    if (wasPaused && this.#pauseReasons.size === 0) {
+      this.#lastTime = performance.now();
+      this.#eventBus?.emit('game:resume', { reason });
+    }
   }
+
+  get isPaused() { return this.#pauseReasons.size > 0; }
+  get pauseReasons() { return [...this.#pauseReasons]; }
 
   destroy() {
     if (this.#rafId) cancelAnimationFrame(this.#rafId);
+    document.removeEventListener('visibilitychange', this.#onVisibilityChange);
     this.#currentScene?.destroy();
     this.#eventBus.clear();
     this.#inputManager.destroy();
