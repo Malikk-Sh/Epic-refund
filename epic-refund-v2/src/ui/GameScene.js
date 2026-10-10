@@ -43,6 +43,7 @@ export class GameScene {
   #currentLevelKey = 'level_01';
   #worldState = {};
   #completed = false;
+  #damageTintTimer = 0;
 
   constructor(deps) {
     this.#deps = deps;
@@ -292,6 +293,7 @@ export class GameScene {
 
     // Урон по игроку
     on('combat:playerHit', ({ source }) => {
+      this.#damageTintTimer = 0.24;
       this.#deps.camera.shake(4);
       if (source?.x !== undefined) {
         const dx = this.#player.x - source.x;
@@ -456,6 +458,7 @@ export class GameScene {
     this.#level.update(dt, this.#player);
     this.#particles.update(dt);
     this.#notifications.update(dt);
+    this.#damageTintTimer = Math.max(0, this.#damageTintTimer - dt);
 
     // Проверка атак игрока
     this.#resolveAttacks();
@@ -602,6 +605,20 @@ export class GameScene {
     // Мир
     const room = this.#level.currentRoom;
     this.#worldRenderer.drawRoom(room, this.#player);
+    // Короткая тёмно-красная вспышка по краям без запроса дорогих фильтров.
+    if (this.#damageTintTimer > 0) {
+      const ctx = d.renderer.ctx;
+      const w = d.renderer.logicalWidth, h = d.renderer.logicalHeight;
+      const alpha = this.#damageTintTimer / 0.24 * 0.30;
+      ctx.save();
+      ctx.fillStyle = 'rgba(130,21,37,' + alpha.toFixed(3) + ')';
+      const edge = 26;
+      ctx.fillRect(0, 0, w, edge);
+      ctx.fillRect(0, h - edge, w, edge);
+      ctx.fillRect(0, edge, edge, h - edge * 2);
+      ctx.fillRect(w - edge, edge, edge, h - edge * 2);
+      ctx.restore();
+    }
     this.#abilities.draw(d.renderer.ctx, d.camera);
 
     // Частицы
