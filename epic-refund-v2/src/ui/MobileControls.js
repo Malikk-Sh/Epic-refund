@@ -13,7 +13,7 @@ const CHOICE_ACTIONS = [
 ];
 const GATE_ACTIONS = [
   ['up', '↑', 'Предыдущий навык'], ['down', '↓', 'Следующий навык'],
-  ['pause', '✕', 'Закрыть Врата'],
+  ['interact', '✓', 'Подтвердить жертву'], ['pause', '✕', 'Закрыть Врата'],
 ];
 
 export class MobileControls {
