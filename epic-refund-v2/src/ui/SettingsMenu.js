@@ -89,7 +89,7 @@ export class SettingsMenu {
     this.#qualityToggle.checked = this.#game.renderer.pixelDensityCap > 1;
     this.#panel.hidden = false;
     this.#toggle.setAttribute('aria-expanded', 'true');
-    this.#game.pause();
+    this.#game.pause('settings');
     this.#syncFullscreen();
     this.#fullscreen.focus();
   };
@@ -101,7 +101,7 @@ export class SettingsMenu {
     this.#toggle.setAttribute('aria-expanded', 'false');
     this.#game.inputManager.releaseAllVirtual();
     this.#game.inputManager.flush();
-    this.#game.resume();
+    this.#game.resume('settings');
     this.#toggle.focus();
   };
 
