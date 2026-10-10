@@ -169,6 +169,7 @@ export class GameScene {
         hp: this.#player.hp,
         mana: this.#player.mana,
         stamina: this.#player.stamina,
+        shieldCharges: this.#player.shieldCharges,
       },
       world: this.#worldState,
     });
@@ -183,7 +184,7 @@ export class GameScene {
     }
     this.#completed = false;
     this.#pendingAttacks = [];
-    this.#abilities.reset();
+    this.#abilities.reset(true);
     this.#gateUI.hide();
     if (this.#dialogue.isActive) this.#dialogue.hide();
     d.gateSystem.deserialize(saved.gates ?? {});
