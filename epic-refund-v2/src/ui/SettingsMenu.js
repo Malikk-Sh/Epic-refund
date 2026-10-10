@@ -8,10 +8,13 @@ export class SettingsMenu {
   #status;
   #touchToggle;
   #soundToggle;
+  #hapticsToggle;
+  #feedback;
   #qualityToggle;
   #open = false;
 
-  constructor(game, controls) {
+  constructor(game, controls, feedback = null) {
+    this.#feedback = feedback;
     this.#game = game;
     this.#controls = controls;
     this.#toggle = document.createElement('button');
@@ -35,6 +38,12 @@ export class SettingsMenu {
       '  <label class="settings-touch"><input type="checkbox" id="settings-touch-toggle"> Сенсорное управление</label>',
       '  <label class="settings-touch"><input type="checkbox" id="settings-sound-toggle"> Звуковые эффекты</label>',
       '  <label class="settings-touch"><input type="checkbox" id="settings-quality-toggle"> Чёткая графика (Retina)</label>',
+      '  <label class="settings-touch"><input type="checkbox" id="settings-haptics-toggle"> Вибрация при ударах (Android)</label>',
+      '  <details class="settings-help"><summary>Как играть и что делают кнопки</summary>',
+      '    <p>Левый круг — движение. ⚔ — обычная атака (можно удерживать); ◆ — парирование или сильный удар; ↝ — перекат; E — разговор и взаимодействие.</p>',
+      '    <p>Кнопки 1–3 — активные способности, ★ — ультимативная. У Врат ↑↓ выбирают навык, ✓ нужно нажать дважды — потеря необратима.</p>',
+      '    <p>Клавиатура: WASD · J/K · Shift · E · U/I/O/P. Прогресс сохраняется на контрольных точках.</p>',
+      '  </details>',
       '  <p id="settings-status" role="status" aria-live="polite"></p>',
       '  <p class="settings-hint">На iPhone полный экран обычно доступен через «На экран Домой» в меню «Поделиться».</p>',
       '</div>',
@@ -45,11 +54,15 @@ export class SettingsMenu {
     this.#status = this.#panel.querySelector('#settings-status');
     this.#soundToggle = this.#panel.querySelector('#settings-sound-toggle');
     this.#qualityToggle = this.#panel.querySelector('#settings-quality-toggle');
+    this.#hapticsToggle = this.#panel.querySelector('#settings-haptics-toggle');
+    this.#hapticsToggle.disabled = !this.#feedback?.supported;
+    this.#hapticsToggle.checked = this.#feedback?.enabled ?? false;
     try {
       if (localStorage.getItem('epic_refund_retina') === 'false')
         this.#game.renderer.setPixelDensityCap(1);
     } catch {}
     this.#qualityToggle.checked = this.#game.renderer.pixelDensityCap > 1;
+    this.#hapticsToggle.checked = this.#feedback?.enabled ?? false;
     try {
       const sound = localStorage.getItem('epic_refund_sound');
       if (sound !== null) this.#game.audioManager.setMuted(sound === 'false');
@@ -63,6 +76,9 @@ export class SettingsMenu {
     this.#fullscreen.addEventListener('click', this.#toggleFullscreen);
     this.#touchToggle.addEventListener('change', () => {
       this.#controls.setVisible(this.#touchToggle.checked);
+    });
+    this.#hapticsToggle.addEventListener('change', () => {
+      this.#feedback?.setEnabled(this.#hapticsToggle.checked);
     });
     this.#qualityToggle.addEventListener('change', () => {
       this.#game.renderer.setPixelDensityCap(this.#qualityToggle.checked ? 2 : 1);
@@ -145,6 +161,7 @@ export class SettingsMenu {
     document.removeEventListener('fullscreenchange', this.#syncFullscreen);
     document.removeEventListener('webkitfullscreenchange', this.#syncFullscreen);
     window.removeEventListener('keydown', this.#onKeyDown);
+    this.#feedback?.destroy();
     this.#toggle.remove();
     this.#panel.remove();
   }
