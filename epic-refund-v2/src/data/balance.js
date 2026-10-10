@@ -15,7 +15,8 @@ export const BALANCE = {
     rollSpeed: 240,
     rollDuration: 0.3,
     rollCooldown: 0.55,
-    inputBufferWindow: 0.36, // секунды: короткое касание во время анимации не пропадёт
+    inputBufferWindow: 0.36,
+    assistExtraRange: 12, // комфортный захват цели при ближней атаке на телефоне // секунды: короткое касание во время анимации не пропадёт
     staminaMax: 100,
     staminaRegen: 25,
     manaRegen: 8,
