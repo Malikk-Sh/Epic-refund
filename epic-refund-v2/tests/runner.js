@@ -72,6 +72,8 @@ const { AbilitySystem } = await import('../src/systems/AbilitySystem.js');
 const { drawHeroArt, drawEnemyArt, drawNpcArt } = await import('../src/render/ActorArt.js');
 const { DialogueSystem } = await import('../src/ui/DialogueSystem.js');
 const { GateUI } = await import('../src/ui/GateUI.js');
+const { Player } = await import('../src/entities/Player.js');
+const { Renderer } = await import('../src/core/Renderer.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -937,6 +939,119 @@ describe('Mobile and checkpoint regressions', () => {
 
 
 // Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Combat responsiveness and Retina mobile rendering', () => {
+  function fixture() {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const player = new Player({
+      skillTree: tree,
+      echoSystem: new EchoSystem(tree),
+      combatSystem: new CombatSystem(bus),
+      eventBus: bus,
+    });
+    const mock = (pressed = [], held = []) => ({
+      isPressed: action => pressed.includes(action),
+      isHeld: action => held.includes(action),
+      getMovementVector: () => ({ x: 0, y: 0 }),
+    });
+    return { bus, tree, player, mock };
+  }
+
+  it('первый удар сохраняет FSM attack и отображает анимацию', () => {
+    const { player, mock } = fixture();
+    player.update(.016, mock(['attackLight'], ['attackLight']), null);
+    expect(player.isInAttack).toBe(true);
+    player.update(.1, mock([], []), null);
+    expect(player.isInAttack).toBe(true);
+  });
+
+  it('короткое касание магии во время удара сработает по завершении анимации', () => {
+    const { player, mock, bus } = fixture();
+    const skills = [];
+    bus.on('player:skillUsed', d => skills.push(d.skillId));
+    player.update(.016, mock(['attackLight'], []));
+    player.update(.04, mock(['skill2'], []));
+    for (let i = 0; i < 7; i++) player.update(.05, mock([], []));
+    expect(skills).toContain('mag_t2');
+  });
+
+  it('удержание атаки повторяет удары с перезарядкой без спама', () => {
+    const { player, mock, bus } = fixture();
+    let count = 0;
+    bus.on('player:attack', () => count++);
+    player.update(.016, mock(['attackLight'], ['attackLight']));
+    for (let i = 0; i < 24; i++) player.update(.05, mock([], ['attackLight']));
+    expect(count > 1).toBe(true);
+    expect(count < 8).toBe(true);
+  });
+
+  it('сброс очереди запрещает случайный удар после закрытия модального окна', () => {
+    const { player, mock, bus } = fixture();
+    let casts = 0;
+    bus.on('player:skillUsed', () => casts++);
+    player.update(.016, mock(['attackLight'], []));
+    player.update(.02, mock(['skill1'], []));
+    player.clearBufferedAction();
+    for (let i = 0; i < 10; i++) player.update(.05, mock([], []));
+    expect(casts).toBe(0);
+  });
+
+  it('короткий свайп переката во время удара запускается после удара', () => {
+    const { player, mock } = fixture();
+    player.update(.016, mock(['attackLight'], []));
+    player.update(.05, mock(['roll'], []));
+    for (let i = 0; i < 7; i++) player.update(.05, mock([], []));
+    expect(player.state).toBe('roll');
+  });
+
+  it('Retina viewport выдаёт HiDPI buffer при той же CSS-геометрии', () => {
+    const original = globalThis.window;
+    const listeners = new Map();
+    let lastScale = 0;
+    globalThis.window = {
+      innerWidth: 844, innerHeight: 390, devicePixelRatio: 2,
+      addEventListener(n, fn) { listeners.set(n, fn); },
+      removeEventListener(n) { listeners.delete(n); },
+    };
+    const ctx = {
+      save(){},restore(){},
+      setTransform(a){lastScale=a;},
+      fillRect(){},
+    };
+    const canvas = { getContext: () => ctx, style: {} };
+    try {
+      const renderer = new Renderer(canvas);
+      const cssWidth = Number.parseInt(canvas.style.width, 10);
+      expect(canvas.width > cssWidth).toBe(true);
+      renderer.beginFrame(); renderer.endFrame();
+      expect(lastScale > renderer.scale).toBe(true);
+      expect(renderer.screenToLogical(422,195).x > 0).toBe(true);
+      renderer.destroy();
+      expect(listeners.size).toBe(0);
+    } finally {
+      globalThis.window = original;
+    }
+  });
+
+  it('портретный дисплей не вызывает DPR3-овершут памяти canvas', () => {
+    const original = globalThis.window;
+    globalThis.window = {
+      innerWidth: 390, innerHeight: 844, devicePixelRatio: 3,
+      addEventListener(){}, removeEventListener(){},
+    };
+    const canvas = { getContext: () => ({ imageSmoothingEnabled: false }), style: {} };
+    try {
+      const renderer = new Renderer(canvas);
+      expect(renderer.pixelRatio).toBe(2);
+      expect(canvas.width).toBe(780);
+      expect(canvas.height < 600).toBe(true);
+      renderer.destroy();
+    } finally {
+      globalThis.window = original;
+    }
+  });
+});
+
 describe('Safe mobile Gate sacrifice', () => {
   it('первое подтверждение не удаляет навык, второе выполняет жертву', () => {
     const bus = new EventBus();
