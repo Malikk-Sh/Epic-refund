@@ -90,6 +90,7 @@ try{
   await snap('dialogue-no-stale-room-event');
 
   // Событие должно дождаться выхода из меню, а не потеряться.
+  await page.evaluate(()=>window.__epicQA.qaSetNarrativeMute(false));
   await page.evaluate(()=>window.__epicGame.pause('qa'));
   await page.evaluate(()=>window.__epicQA.qaQueueDialogue());
   await page.waitForTimeout(220);
@@ -100,6 +101,7 @@ try{
   if(!await page.evaluate(()=>window.__epicQA.qaDialogueVisible()))
     throw Error('Narrative was lost instead of resuming after pause');
   await snap('dialogue-returns-after-pause');
+  await page.evaluate(()=>window.__epicQA.qaSetNarrativeMute(true));
   await go('level_01','l1_room_01');
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
