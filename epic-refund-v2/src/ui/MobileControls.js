@@ -20,8 +20,9 @@ export class MobileControls {
   #activePointer = null;
   #heldDirections = new Set();
   #visible = false;
+  #unsubscribeChoices = null;
 
-  constructor(input) {
+  constructor(input, eventBus) {
     this.#input = input;
     this.#root = document.createElement('div');
     this.#root.id = 'mobile-controls';
@@ -43,6 +44,9 @@ export class MobileControls {
     this.#stick.addEventListener('pointerup', this.#stopStick);
     this.#stick.addEventListener('pointercancel', this.#stopStick);
     window.addEventListener('blur', this.#releaseAll);
+    this.#unsubscribeChoices = eventBus.on('ui:choices', ({ visible }) => {
+      this.#root.querySelector('#mobile-choices').classList.toggle('choices-visible', Boolean(visible));
+    });
 
     const touch = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
     let preference = null;
@@ -131,6 +135,7 @@ export class MobileControls {
   setVisible(visible) {
     this.#visible = Boolean(visible);
     this.#root.classList.toggle('visible', this.#visible);
+    document.body.classList.toggle('touch-active', this.#visible);
     if (!this.#visible) this.#releaseAll();
     try { localStorage.setItem('epic_refund_touch_controls', String(this.#visible)); } catch {}
   }
@@ -139,6 +144,8 @@ export class MobileControls {
   destroy() {
     window.removeEventListener('blur', this.#releaseAll);
     this.#releaseAll();
+    this.#unsubscribeChoices?.();
+    document.body.classList.remove('touch-active');
     this.#root.remove();
   }
 }
