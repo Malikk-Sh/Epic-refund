@@ -55,6 +55,22 @@ try{
   await snap('mobile-held-attack-combo');
 
 
+  // Враг за спиной, но в радиусе: касание ударяет в него автоматически.
+  await go('level_01','l1_room_02');
+  if(!await page.evaluate(()=>window.__epicQA.qaTouchAimSetup()))
+    throw Error('No enemy for mobile aim test');
+  await page.waitForTimeout(80);
+  const aimBefore=await page.evaluate(()=>window.__epicQA.qaTouchAimResult());
+  if(!aimBefore.target)throw Error('Mobile aim reticle failed to select nearby enemy');
+  await snap('mobile-target-assist');
+  const aimStatusBefore=await page.evaluate(()=>window.__epicQA.qaAttackInputState());
+  await page.locator('#mobile-actions [data-action="attackLight"]').tap();
+  await page.waitForTimeout(90);
+  const aimAfter=await page.evaluate(()=>window.__epicQA.qaTouchAimResult());
+  const aimStatusAfter=await page.evaluate(()=>window.__epicQA.qaAttackInputState());
+  if(aimAfter.facingX>=0 || aimAfter.hp>=aimBefore.hp)
+    throw Error('Touch melee did not hit behind-player enemy: '+JSON.stringify({aimBefore,aimAfter,aimStatusBefore,aimStatusAfter}));
+
   await go('level_01','l1_room_01');
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
@@ -117,20 +133,6 @@ try{
     if(!await page.locator('#mobile-actions [data-action="interact"]').isVisible())throw Error('Interact should stay visible');
     await snap('dialogue-gribl');
   }
-
-  // Враг за спиной, но в радиусе: касание ударяет в него автоматически.
-  await go('level_01','l1_room_02');
-  if(!await page.evaluate(()=>window.__epicQA.qaTouchAimSetup()))
-    throw Error('No enemy for mobile aim test');
-  await page.waitForTimeout(80);
-  const aimBefore=await page.evaluate(()=>window.__epicQA.qaTouchAimResult());
-  if(!aimBefore.target)throw Error('Mobile aim reticle failed to select nearby enemy');
-  await snap('mobile-target-assist');
-  await page.locator('#mobile-actions [data-action="attackLight"]').tap();
-  await page.waitForTimeout(90);
-  const aimAfter=await page.evaluate(()=>window.__epicQA.qaTouchAimResult());
-  if(aimAfter.facingX>=0 || aimAfter.hp>=aimBefore.hp)
-    throw Error('Touch melee did not hit behind-player enemy: '+JSON.stringify(aimAfter));
 
   // Проверяем настоящий touch-tap на кнопке навыка, не только QA-вызов use().
   await go('level_01','l1_room_02');
