@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 const root=process.cwd(),dest=path.resolve(process.env.EPIC_SCREENSHOT_DIR||'qa-screenshots');
 const temp=await mkdtemp(path.join(os.tmpdir(),'epic-qa-'));let browser,server;
-const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#abilities.reset(true);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaAbility(skillId) {\n    const room=this.#level.currentRoom;\n    const target=room.enemies.find(e=>e.isAlive);\n    if (target) {\n      this.#player.x=target.x-36; this.#player.y=target.y;\n      this.#player.facingX=1;this.#player.facingY=0;\n    }\n    this.#player.mana=100;\n    this.#player.stamina=100;\n    return this.#abilities.use(skillId);\n  }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
+const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#abilities.reset(true);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaAbility(skillId) {\n    const room=this.#level.currentRoom;\n    const target=room.enemies.find(e=>e.isAlive);\n    if (target) {\n      this.#player.x=target.x-36; this.#player.y=target.y;\n      this.#player.facingX=1;this.#player.facingY=0;\n    }\n    this.#player.mana=100;\n    this.#player.stamina=100;\n    return this.#abilities.use(skillId);\n  }\n  qaBeginAttackCount() {\n    this.__qaAttackUnsub?.();\n    this.__qaAttacks=0;\n    this.__qaAttackUnsub=this.#deps.eventBus.on('player:attack',()=>this.__qaAttacks++);\n  }\n  qaAttackCount() { return this.__qaAttacks ?? 0; }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
 const errors=[], images=[];
 async function pause(ms){return new Promise(r=>setTimeout(r,ms));}
 try{
@@ -41,6 +41,20 @@ try{
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
   // Проверяем реальный UI mute toggle, включая сохранение настройки.
   const soundToggle = page.locator('#settings-sound-toggle');
+
+  // Проверяем реальный размер backing-buffer Retina / режим экономии батареи.
+  const retinaToggle = page.locator('#settings-quality-toggle');
+  if(!await retinaToggle.isChecked()) throw Error('Retina mode should be on by default');
+  const hdPixels = await page.locator('#game-canvas').evaluate(el=>el.width);
+  await retinaToggle.uncheck();
+  const lowPixels = await page.locator('#game-canvas').evaluate(el=>el.width);
+  if(!(hdPixels>lowPixels)) throw Error('Retina toggle did not reduce rendering resolution');
+  if(await page.evaluate(()=>localStorage.getItem('epic_refund_retina'))!=='false')
+    throw Error('Graphics preference not saved');
+  await snap('settings-battery-saver');
+  await retinaToggle.check();
+  if(await page.evaluate(()=>localStorage.getItem('epic_refund_retina'))!=='true')
+    throw Error('Retina preference not restored');
   if(!await soundToggle.isChecked()) throw Error('Sound should be enabled by default');
   await soundToggle.uncheck();
   if(await page.evaluate(()=>localStorage.getItem('epic_refund_sound'))!=='false')
@@ -84,6 +98,21 @@ try{
     if(!await page.locator('#mobile-actions [data-action="interact"]').isVisible())throw Error('Interact should stay visible');
     await snap('dialogue-gribl');
   }
+
+  // Настоящий жест удержания: игрок продолжает бить, даже если первый удар
+  // уже в анимации. 30 кадров в браузере, а не синтетическая unit-проверка.
+  await go('level_01','l1_room_02');
+  await page.evaluate(()=>window.__epicQA.qaBeginAttackCount());
+  const attackBox=await page.locator('#mobile-actions [data-action="attackLight"]').boundingBox();
+  if(!attackBox) throw Error('Attack button not available');
+  await page.mouse.move(attackBox.x+attackBox.width/2,attackBox.y+attackBox.height/2);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  const combos=await page.evaluate(()=>window.__epicQA.qaAttackCount());
+  if(combos<2) throw Error('Held touch action failed to chain attacks: '+combos);
+  await snap('mobile-held-attack-combo');
+
   // Проверяем настоящий touch-tap на кнопке навыка, не только QA-вызов use().
   await go('level_01','l1_room_02');
   await page.locator('#mobile-skills [data-action="skill2"]').tap();
