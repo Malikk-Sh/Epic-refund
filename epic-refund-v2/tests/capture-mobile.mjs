@@ -69,7 +69,6 @@ try{
   for(const p of [1,2,3]){await page.evaluate(p=>window.__epicQA.qaBossPhase(p),p);await snap('boss-phase-'+p);}
   await go('level_02','l2_room_01');
   if(await page.evaluate(()=>window.__epicQA.qaTalk()))await snap('dialogue-gribl');
-  for(const n of [16,11,6,2,0]){await page.evaluate(n=>window.__epicQA.qaSkillCount(n),n);await snap('hud-'+n+'-skills');}
   // Проверяем настоящий touch-tap на кнопке навыка, не только QA-вызов use().
   await go('level_01','l1_room_02');
   await page.locator('#mobile-skills [data-action="skill2"]').tap();
@@ -84,6 +83,8 @@ try{
     if(!success)throw Error('Skill failed to cast during mobile QA: '+skillId);
     await snap('ability-'+skillId);
   }
+  await go('level_02','l2_room_01');
+  for(const n of [16,11,6,2,0]){await page.evaluate(n=>window.__epicQA.qaSkillCount(n),n);await snap('hud-'+n+'-skills');}
   await page.evaluate(()=>window.__epicQA.qaDie());await snap('player-death');
   await page.setViewportSize({width:390,height:844});
   await page.reload();
