@@ -101,12 +101,11 @@ export class GateSystem {
 
   #openGate() {
     const gate = this.#activeGate;
+    this.#partialSacrifices.delete(gate.id);
     this.#eventBus.emit('gate:open', {
       gateId: gate.id,
       sacrifices: [...this.#pendingSacrifices],
     });
-
-    this.#partialSacrifices.delete(gate.id);
     this.#activeGate = null;
     this.#pendingSacrifices = [];
   }
