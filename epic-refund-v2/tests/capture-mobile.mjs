@@ -81,6 +81,14 @@ try{
   await go('level_02','l2_room_01');
   if(await page.evaluate(()=>window.__epicQA.qaTalk()))await snap('dialogue-gribl');
   for(const n of [16,11,6,2,0]){await page.evaluate(n=>window.__epicQA.qaSkillCount(n),n);await snap('hud-'+n+'-skills');}
+  // Проверяем настоящий touch-tap на кнопке навыка, не только QA-вызов use().
+  await go('level_01','l1_room_02');
+  await page.locator('#mobile-skills [data-action="skill2"]').tap();
+  await page.waitForTimeout(220);
+  const cooldownText = await page.locator('#mobile-skills [data-action="skill2"]').textContent();
+  if(!/^\\d+$/.test(cooldownText)) throw Error('Touch fireball did not start cooldown: '+cooldownText);
+  await snap('ability-touch-fireball-cooldown');
+
   for(const skillId of ['str_t3','mag_t2','agi_t3','str_t4','mag_t4','def_t4','agi_t4','aur_t4']){
     await go('level_01','l1_room_02');
     const success=await page.evaluate(id=>window.__epicQA.qaAbility(id),skillId);
