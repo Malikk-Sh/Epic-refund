@@ -148,6 +148,15 @@
       bottom: calc(env(safe-area-inset-bottom) + 18px); display: none; gap: 6px;
     }
     #mobile-choices.choices-visible { display: flex; }
+    #mobile-gate-nav {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: calc(env(safe-area-inset-bottom) + 18px);
+      display: none; gap: 8px;
+    }
+    #mobile-gate-nav.gate-nav-visible { display: flex; }
+    #mobile-gate-nav .touch-button {
+      min-width: 48px; min-height: 48px; font-size: 22px; border-radius: 13px;
+    }
     #mobile-choices .touch-button { width: 43px; height: 43px; font-size: 16px; border-radius: 12px; }
     #settings-open {
       position: fixed; z-index: 160; top: calc(env(safe-area-inset-top) + 12px);
@@ -181,8 +190,9 @@
     #orientation-hint { display: none; z-index: 112; position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 14px);
       font: 12px system-ui,sans-serif; color: #dbc69b; background: rgba(14,12,14,.8); border-radius: 11px; padding: 10px; pointer-events:none; }
     @media (orientation: portrait) and (max-width: 850px) {
-      #orientation-hint { display: block; top: calc(env(safe-area-inset-top) + 72px); width: min(72%, 300px); text-align: center; }
+      #orientation-hint { display: block; top: calc(env(safe-area-inset-top) + 138px); width: min(72%, 300px); text-align: center; }
       #mobile-choices { bottom: calc(env(safe-area-inset-bottom) + 164px); }
+      #mobile-gate-nav { bottom: calc(env(safe-area-inset-bottom) + 174px); }
     }
     @media (max-height: 420px) {
       #move-pad { width: 106px; height: 106px; }
@@ -192,6 +202,7 @@
       #mobile-skills { top: calc(env(safe-area-inset-top) + 6px); right: calc(env(safe-area-inset-right) + 75px); }
       #mobile-skills .touch-button { min-height: 38px; min-width: 38px; }
       #mobile-choices { bottom: 10px; }
+      #mobile-gate-nav { bottom: 10px; }
     }
   </style>
 </head>
