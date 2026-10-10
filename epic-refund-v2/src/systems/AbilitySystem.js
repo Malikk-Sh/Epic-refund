@@ -335,7 +335,8 @@ export class AbilitySystem {
     ctx.restore();
   }
 
-  reset() {
+  reset(clearCooldowns = false) {
+    if (clearCooldowns) this.#cooldowns.clear();
     this.#projectiles.length = 0;
     this.#effects.length = 0;
     this.#burning.clear();
