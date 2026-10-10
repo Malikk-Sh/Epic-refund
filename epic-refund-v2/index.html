@@ -142,10 +142,12 @@
       position: absolute; right: max(15px, env(safe-area-inset-right));
       top: calc(env(safe-area-inset-top) + 66px); display: flex; gap: 6px;
     }
+    .touch-active #controls-hint { display: none; }
     #mobile-choices {
       position: absolute; left: 50%; transform: translateX(-50%);
-      bottom: calc(env(safe-area-inset-bottom) + 18px); display: flex; gap: 6px;
+      bottom: calc(env(safe-area-inset-bottom) + 18px); display: none; gap: 6px;
     }
+    #mobile-choices.choices-visible { display: flex; }
     #mobile-choices .touch-button { width: 43px; height: 43px; font-size: 16px; border-radius: 12px; }
     #settings-open {
       position: fixed; z-index: 160; top: calc(env(safe-area-inset-top) + 12px);
