@@ -93,7 +93,9 @@ export class Player {
       this.hp = Math.round(newMaxHP * pct);
     }
 
+    const previousMaxMana = this.maxMana;
     this.maxMana = this.#skillTree.isActive('mag_base') ? 100 : 0;
+    if (previousMaxMana === 0 && this.maxMana > 0) this.mana = this.maxMana;
     if (this.mana > this.maxMana) this.mana = this.maxMana;
 
     this.shieldCharges = this.#skillTree.isActive('def_t3') ? 3 : 0;
@@ -153,7 +155,8 @@ export class Player {
 
   #handleInput(input) {
     // Атаки
-    if (input.isPressed('attackLight') && this.#attackCooldown <= 0) {
+    if (input.isPressed('attackLight') && this.#attackCooldown <= 0 &&
+        this.stamina >= BC.staminaCostLight) {
       this.#tryLightAttack();
       return;
     }
@@ -246,7 +249,8 @@ export class Player {
 
   #tryHeavyOrParry() {
     // Парирование (если есть навык)
-    if (this.#skillTree.isActive('def_t2') && !this.#isParrying) {
+    if (this.#skillTree.isActive('def_t2') && !this.#isParrying &&
+        this.stamina >= BC.staminaCostParry) {
       this.#isParrying = true;
       this.#parryWindowTimer = BC.parryWindow;
       this.stamina = Math.max(0, this.stamina - BC.staminaCostParry);
@@ -255,7 +259,8 @@ export class Player {
     }
 
     // Тяжёлый удар (если есть)
-    if (this.#skillTree.isActive('str_t2')) {
+    if (this.#skillTree.isActive('str_t2') &&
+        this.stamina >= BC.staminaCostHeavy) {
       const echo = this.#echoSystem.getPassiveBonuses();
       const damage = this.#combatSystem.calculatePlayerDamage({
         baseDamage: 45,
@@ -363,6 +368,9 @@ export class Player {
   }
 
   #updateRegen(dt) {
+    if (this.maxMana > 0 && this.mana < this.maxMana) {
+      this.mana = Math.min(this.maxMana, this.mana + B.manaRegen * dt);
+    }
     if (!this.#skillTree.isActive('aur_base')) return;
     if (this.hp >= this.maxHP) return;
     const rate = this.inCombat ? 0.5 : 2;
