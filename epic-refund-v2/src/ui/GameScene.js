@@ -463,7 +463,7 @@ export class GameScene {
 
     // Основной апдейт
     const room = this.#level.currentRoom;
-    this.#player.update(dt, input, room.tilemap);
+    this.#player.update(dt, input, room.tilemap, room.enemies);
     this.#abilities.update(dt);
     this.#level.update(dt, this.#player);
     this.#particles.update(dt);
