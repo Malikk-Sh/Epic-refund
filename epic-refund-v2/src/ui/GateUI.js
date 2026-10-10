@@ -17,6 +17,7 @@ export class GateUI {
   #visible = false;
   #removableList = [];
   #selectedIndex = 0;
+  #confirmArmed = false;
 
   constructor(renderer, gateSystem, eventBus) {
     this.#renderer = renderer;
@@ -30,37 +31,52 @@ export class GateUI {
     if (this.#removableList.length === 0) return;
     this.#visible = true;
     this.#selectedIndex = 0;
+    this.#confirmArmed = false;
     this.#eventBus.emit('ui:gate', { visible: true });
   }
 
   hide() {
     this.#visible = false;
+    this.#confirmArmed = false;
     this.#eventBus.emit('ui:gate', { visible: false });
   }
 
   update(dt, input) {
     if (!this.#visible) return;
 
+    // Любое изменение выбора отменяет предварительное подтверждение.
     // Навигация стрелками / WASD
     if (input.isPressed('up') || input.isPressed('left')) {
+      this.#confirmArmed = false;
       this.#selectedIndex = (this.#selectedIndex - 1 + this.#removableList.length) % this.#removableList.length;
     }
     if (input.isPressed('down') || input.isPressed('right')) {
+      this.#confirmArmed = false;
       this.#selectedIndex = (this.#selectedIndex + 1) % this.#removableList.length;
     }
 
-    // Enter/E/J — подтвердить выбор (J чтобы не конфликтовать с E для следующего взаимодействия)
+    // Первое касание/нажатие только предупреждает о необратимой потере.
+    // Второе подтверждает ту же способность. Навигация сбрасывает подтверждение.
     if (input.isPressed('attackLight') || input.isPressed('interact')) {
       const skill = this.#removableList[this.#selectedIndex];
       if (skill) {
-        this.#gateSystem.sacrifice(skill.id);
-        this.hide();
-        // Если нужны ещё жертвы (major) — откроемся снова
-        setTimeout(() => {
-          if (this.#gateSystem.isActive() && this.#gateSystem.getSacrificesRemaining() > 0) {
-            this.show();
+        if (!this.#confirmArmed) {
+          this.#confirmArmed = true;
+          this.#eventBus.emit('ui:gateConfirm', { skillId: skill.id });
+        } else {
+          const success = this.#gateSystem.sacrifice(skill.id);
+          if (success) {
+            this.hide();
+            // Если нужны ещё жертвы (major) — откроемся снова.
+            setTimeout(() => {
+              if (this.#gateSystem.isActive() && this.#gateSystem.getSacrificesRemaining() > 0) {
+                this.show();
+              }
+            }, 300);
+          } else {
+            this.#confirmArmed = false;
           }
-        }, 300);
+        }
       }
     }
 
@@ -116,20 +132,24 @@ export class GateUI {
     ctx.fillStyle = '#c8a96e';
     ctx.fillText(`Жертв требуется: ${remaining}`, px + panelW / 2, py + 42);
 
-    // Список навыков
+    // Список навыков (не больше 6 строк): выбранная строка всегда видима.
     const listY = py + 58;
+    const windowStart = Math.min(Math.max(0, this.#selectedIndex - 5),
+      Math.max(0, this.#removableList.length - 6));
     const rowH = 18;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    for (let i = 0; i < Math.min(this.#removableList.length, 6); i++) {
+    for (let row = 0; row < Math.min(this.#removableList.length, 6); row++) {
+      const i = windowStart + row;
       const skill = this.#removableList[i];
-      const y = listY + i * rowH;
+      const y = listY + row * rowH;
       const selected = i === this.#selectedIndex;
       const color = BRANCH_COLORS[skill.branch] ?? '#888';
 
       // Фон строки
-      ctx.fillStyle = selected ? 'rgba(139, 0, 255, 0.25)' : 'rgba(40, 30, 50, 0.4)';
+      ctx.fillStyle = selected && this.#confirmArmed
+        ? 'rgba(165,48,56,.45)' : selected ? 'rgba(139,0,255,.25)' : 'rgba(40,30,50,.4)';
       ctx.fillRect(px + 10, y, panelW - 20, rowH - 2);
 
       // Индикатор ветки
@@ -163,11 +183,20 @@ export class GateUI {
       ctx.fillText(truncated, px + 18, y + 10);
     }
 
-    // Подсказки
-    ctx.font = '7px monospace';
+    // Показываем необратимость действия и количество строк за экраном.
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#666';
-    ctx.fillText('↑↓ выбор  ·  [J/E] подтвердить  ·  [Esc] отмена', px + panelW / 2, py + panelH - 14);
+    ctx.font = '7px monospace';
+    ctx.fillStyle = this.#confirmArmed ? '#ff9787' : '#8a7c87';
+    const footer = this.#confirmArmed
+      ? 'НАВСЕГДА потерять навык? [J/E] — ДА'
+      : '↑↓ выбор  ·  [J/E] жертва  ·  [Esc] выход';
+    ctx.fillText(footer, px + panelW / 2, py + panelH - 14);
+    if (this.#removableList.length > 6) {
+      ctx.fillStyle = '#bb88ff';
+      ctx.font = '7px monospace';
+      ctx.fillText((this.#selectedIndex + 1) + ' / ' + this.#removableList.length,
+        px + panelW - 25, py + 43);
+    }
   }
 
   get visible() { return this.#visible; }
