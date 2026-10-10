@@ -2,6 +2,7 @@
 // Все таймеры обновляются игровым dt: пауза и смена комнат не порождают setTimeout.
 import { SKILLS } from '../data/skills.js';
 import { BALANCE } from '../data/balance.js';
+import { chooseCombatTarget, blockedLine } from './CombatTargeting.js';
 
 const A = BALANCE.abilities;
 const ACTION_BY_SKILL = {
@@ -112,7 +113,22 @@ export class AbilitySystem {
       this.#effects.push({ skillId, kind: 'vortex', duration: skill.effects.duration,
         remaining: skill.effects.duration, tick: 0 });
     } else if (skillId === 'mag_t2') {
-      const dx = player.facingX, dy = player.facingY;
+      let dx = player.facingX, dy = player.facingY;
+      // Без второго стика «Огненный шар» мягко подхватывает ближайшую
+      // видимую цель, но никогда не целится сквозь стену.
+      if (player.touchAimAssist) {
+        const target = chooseCombatTarget(room.enemies, player.x, player.y,
+          dx, dy, A.projectileAimRange,
+          (x0, y0, x1, y1) => blockedLine(room.tilemap, x0, y0, x1, y1));
+        if (target) {
+          const len = Math.hypot(target.x - player.x, target.y - player.y) || 1;
+          dx = (target.x - player.x) / len;
+          dy = (target.y - player.y) / len;
+          player.facingX = dx;
+          player.facingY = dy;
+          player.aimTarget = target;
+        }
+      }
       this.#projectiles.push({ x: player.x + dx * A.projectileSpawnOffset,
         y: player.y + dy * A.projectileSpawnOffset, dx, dy,
         distance: 0, speed: skill.effects.projectileSpeed, skillId });
