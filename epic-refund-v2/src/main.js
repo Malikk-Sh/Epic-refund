@@ -20,11 +20,9 @@ async function main() {
 
     setProgress(45);
 
-    // Здесь можно зарегистрировать спрайты, если они есть в assets/sprites/:
-    //   game.spriteRegistry.register('player', 'assets/sprites/player.png', { width: 16, height: 16 });
-    //   game.spriteRegistry.register('slime',  'assets/sprites/slime.png',  { width: 16, height: 12 });
-    //   game.spriteRegistry.register('goblin', 'assets/sprites/goblin.png', { width: 14, height: 16 });
-    // Пока ассетов нет — используются плейсхолдеры с подписями.
+    // Пока нет готовых спрайт-листов, персонажи отрисовываются
+    // индивидуальными процедурными пиксельными силуэтами в ActorArt.js.
+    // При регистрации готовых спрайтов SpriteRegistry заменит их автоматически.
 
     await game.loadScene(GameScene);
     const controls = new MobileControls(game.inputManager, game.eventBus);
