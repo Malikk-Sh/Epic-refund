@@ -75,6 +75,7 @@ const { GateUI } = await import('../src/ui/GateUI.js');
 const { Player } = await import('../src/entities/Player.js');
 const { Renderer } = await import('../src/core/Renderer.js');
 const { Camera } = await import('../src/core/Camera.js');
+const { WorldRenderer } = await import('../src/render/WorldRenderer.js');
 const { chooseCombatTarget, blockedLine } = await import('../src/systems/CombatTargeting.js');
 
 function makeLevelSystems() {
@@ -1274,6 +1275,37 @@ describe('Mobile dialogue UI', () => {
     } finally {
       globalThis.document = old;
     }
+  });
+});
+
+describe('Mobile visibility during invulnerability', () => {
+  it('герой остаётся видимым на нечётной фазе мерцания i-frames', () => {
+    const shapes=[];
+    const ctx=new Proxy({},{
+      get(obj,key) {
+        if(key==='fillRect') return (...v)=>shapes.push(v);
+        return obj[key] ?? (()=>{});
+      },
+      set(obj,key,v){obj[key]=v;return true;},
+    });
+    const renderer={ctx},camera={
+      x:0,y:0,visibleWorldWidth:100,visibleWorldHeight:100,zoom:2,
+      worldToScreen:(x,y)=>({x,y}),
+    };
+    const world=new WorldRenderer(renderer,camera,{has:()=>false});
+    const player={
+      x:20,y:20,width:14,height:14,isInvulnerable:true,
+      iFrameTimer:.05,isInAttack:false,isParrying:false,
+      state:'idle',phase:'god',facingX:1,facingY:0,
+      touchAimAssist:false,
+    };
+    const room={
+      id:'l1_room_01',
+      tilemap:{tileSize:24,cols:0,rows:0},
+      getAllEntities:()=>[],
+    };
+    world.drawRoom(room,player);
+    expect(shapes.length>12).toBe(true);
   });
 });
 
