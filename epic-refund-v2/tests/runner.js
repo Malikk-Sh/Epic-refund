@@ -71,6 +71,7 @@ const { HUD } = await import('../src/ui/HUD.js');
 const { AbilitySystem } = await import('../src/systems/AbilitySystem.js');
 const { drawHeroArt, drawEnemyArt, drawNpcArt } = await import('../src/render/ActorArt.js');
 const { DialogueSystem } = await import('../src/ui/DialogueSystem.js');
+const { GateUI } = await import('../src/ui/GateUI.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -936,6 +937,67 @@ describe('Mobile and checkpoint regressions', () => {
 
 
 // Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Safe mobile Gate sacrifice', () => {
+  it('первое подтверждение не удаляет навык, второе выполняет жертву', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const gates = new GateSystem(bus, tree);
+    const ui = new GateUI({}, gates, bus);
+    expect(gates.approach({ id: 'safe_mobile', requirement: 'choice', size: 'minor' }, 1)).toBe(true);
+    ui.show();
+    const confirm = { isPressed: action => action === 'interact' };
+    ui.update(.016, confirm);
+    expect(tree.getActiveSkillCount()).toBe(20);
+    expect(ui.visible).toBe(true);
+    ui.update(.016, confirm);
+    expect(tree.getActiveSkillCount()).toBe(19);
+    expect(ui.visible).toBe(false);
+  });
+
+  it('смена выбора отменяет предварительное подтверждение', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const gates = new GateSystem(bus, tree);
+    gates.approach({ id: 'safe_switch', requirement: 'choice', size: 'minor' }, 1);
+    const ui = new GateUI({}, gates, bus);
+    ui.show();
+    const pressed = action => ({ isPressed: a => a === action });
+    ui.update(.016, pressed('interact'));
+    ui.update(.016, pressed('down'));
+    ui.update(.016, pressed('interact'));
+    expect(tree.getActiveSkillCount()).toBe(20);
+    ui.update(.016, pressed('interact'));
+    expect(tree.getActiveSkillCount()).toBe(19);
+  });
+
+  it('длинный список прокручивается до выбранной строки', () => {
+    const names = [];
+    const ctx = new Proxy({}, {
+      get(obj, key) {
+        if (key === 'measureText') return str => ({ width: String(str).length * 6 });
+        if (key === 'fillText') return str => names.push(str);
+        return obj[key] ?? (() => {});
+      },
+      set(obj, key, value) { obj[key] = value; return true; },
+    });
+    const bus = new EventBus();
+    const fake = {
+      isActive: () => true,
+      getRemovableForCurrentGate: () => Array.from({ length: 9 },
+        (_, i) => ({ id: 's' + i, name: 'Способность ' + i, branch: 'magic',
+          echo: { description: 'Отголосок' } })),
+      getActiveGate: () => ({}),
+      getSacrificesRemaining: () => 1,
+    };
+    const ui = new GateUI({ ctx, logicalWidth: 768, logicalHeight: 432 }, fake, bus);
+    ui.show();
+    for (let i = 0; i < 8; i++) ui.update(.016, {isPressed: a => a === 'down'});
+    ui.draw();
+    expect(names).toContain('Способность 8');
+    expect(names).toContain('9 / 9');
+  });
+});
+
 describe('Mobile dialogue UI', () => {
   it('сообщает сенсорному слою начало и конец монолога', () => {
     const bus = new EventBus();
