@@ -40,6 +40,7 @@ export class HUD {
     this.#eventBus = eventBus;
 
     eventBus.on('skill:lost', () => this.#updateVisibility());
+    eventBus.on('skill:restored', () => this.#updateVisibility());
     this.#updateVisibility();
   }
 
