@@ -55,7 +55,12 @@ export class AbilitySystem {
 
   #validateStates() {
     if (!this.#skills.isActive('agi_t3')) this.#stopStealth();
-    if (!this.#skills.isActive('str_t3')) this.#effects = this.#effects.filter(e => e.skillId !== 'str_t3');
+    // Ритуальная потеря способности отменяет любое длительное действие,
+    // в том числе неуязвимость, танец и ауру (иначе можно было читерить у Врат).
+    this.#effects = this.#effects.filter(e => e.kind === 'flash' ||
+      !e.skillId || this.#skills.isActive(e.skillId));
+    this.#player.abilityInvulnerable = this.#effects.some(e =>
+      e.kind === 'dance' || e.kind === 'invulnerable');
     if (!this.#skills.isActive('mag_t2')) this.#projectiles.length = 0;
     for (const [id] of this.#cooldowns) {
       if (!this.#skills.isActive(id)) this.#cooldowns.delete(id);
