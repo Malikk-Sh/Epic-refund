@@ -27,7 +27,7 @@ async function main() {
     // Пока ассетов нет — используются плейсхолдеры с подписями.
 
     await game.loadScene(GameScene);
-    const controls = new MobileControls(game.inputManager);
+    const controls = new MobileControls(game.inputManager, game.eventBus);
     new SettingsMenu(game, controls);
     setProgress(100);
 
