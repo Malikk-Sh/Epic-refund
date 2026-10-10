@@ -79,6 +79,7 @@ export class Player {
     this.#applySkillStats();
 
     this.#eventBus.on('skill:lost', () => this.#applySkillStats());
+    this.#eventBus.on('skill:restored', () => this.#applySkillStats());
   }
 
   #applySkillStats() {
@@ -453,6 +454,22 @@ export class Player {
   onRoomEnter() {
     const echo = this.#echoSystem.getPassiveBonuses();
     if (echo.healOnRoomEnter > 0) this.heal(echo.healOnRoomEnter);
+  }
+
+  reviveFromCheckpoint(state = {}) {
+    this.isAlive = true;
+    this.inCombat = false;
+    this.#setState('idle');
+    this.#iFrameTimer = 1;
+    this.#attackCooldown = 0;
+    this.#rollCooldown = 0;
+    this.#isParrying = false;
+    this.#isRolling = false;
+    this.#deathSaveUsed = false;
+    this.#applySkillStats();
+    this.hp = Math.max(1, Math.min(this.maxHP, state.hp ?? this.maxHP));
+    this.mana = Math.max(0, Math.min(this.maxMana, state.mana ?? this.maxMana));
+    this.stamina = Math.max(0, Math.min(this.maxStamina, state.stamina ?? this.maxStamina));
   }
 
   resetForNewLevel() {
