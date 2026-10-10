@@ -30,10 +30,12 @@ export class GateUI {
     if (this.#removableList.length === 0) return;
     this.#visible = true;
     this.#selectedIndex = 0;
+    this.#eventBus.emit('ui:gate', { visible: true });
   }
 
   hide() {
     this.#visible = false;
+    this.#eventBus.emit('ui:gate', { visible: false });
   }
 
   update(dt, input) {
