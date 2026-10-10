@@ -173,6 +173,7 @@ export class Game {
     console.log('[Epic Refund] Debug mode. window.game.debug доступен');
   }
 
+  get audioManager() { return this.#audioManager; }
   get eventBus() { return this.#eventBus; }
   get inputManager() { return this.#inputManager; }
 }
