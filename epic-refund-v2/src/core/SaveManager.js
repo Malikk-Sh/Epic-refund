@@ -11,9 +11,10 @@ export class SaveManager {
     return {
       version: SAVE_VERSION,
       timestamp: Date.now(),
-      currentLevel: 2,
-      currentRoom: 'room_01',
-      skillTree: {},
+      currentLevelKey: 'level_01',
+      currentRoomId: 'l1_room_01',
+      skillTree: null,
+      gates: {},
       player: {
         maxHP: 100,
         currentHP: 100,
@@ -22,11 +23,7 @@ export class SaveManager {
         maxStamina: 100,
         currentStamina: 100,
       },
-      world: {
-        visitedRooms: [],
-        defeatedEnemies: {},
-        openedGates: [],
-      },
+      world: {},
       meta: {
         totalPlayTime: 0,
         deathCount: 0,
@@ -66,7 +63,10 @@ export class SaveManager {
     try { return localStorage.getItem(SAVE_KEY_PREFIX + slot) !== null; }
     catch { return false; }
   }
-  deleteSave(slot) { localStorage.removeItem(SAVE_KEY_PREFIX + slot); }
+  deleteSave(slot) {
+    try { localStorage.removeItem(SAVE_KEY_PREFIX + slot); }
+    catch (e) { console.warn('[SaveManager] Не удалось удалить сохранение:', e); }
+  }
   getCurrentSave() { return this.#currentSave; }
 
   #migrate(data) {
