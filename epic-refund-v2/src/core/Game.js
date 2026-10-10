@@ -57,7 +57,7 @@ export class Game {
 
     this.#inputManager = new InputManager();
     this.#camera       = new Camera();
-    this.#camera.setViewSize(BALANCE.viewportWidth, BALANCE.viewportHeight);
+    this.#camera.setViewSize(this.#renderer.logicalWidth, this.#renderer.logicalHeight);
 
     this.#saveManager  = new SaveManager();
     this.#audioManager = new AudioManager(this.#eventBus);
@@ -174,4 +174,5 @@ export class Game {
   }
 
   get eventBus() { return this.#eventBus; }
+  get inputManager() { return this.#inputManager; }
 }
