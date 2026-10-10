@@ -122,7 +122,11 @@ export class Player {
       this.#updateHurt(dt);
     } else {
       this.#handleInput(input);
-      this.#applyMovement(dt, input, tilemap);
+      // Атака и кувырок сохраняют своё FSM-состояние. Ранее вызов движения
+      // сразу превращал «attack» обратно в «idle», ломая анимацию удара.
+      if (this.#state !== 'attack' && this.#state !== 'roll') {
+        this.#applyMovement(dt, input, tilemap);
+      }
     }
 
     this.#updateStamina(dt);
