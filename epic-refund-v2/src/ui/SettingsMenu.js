@@ -55,7 +55,6 @@ export class SettingsMenu {
       if (sound !== null) this.#game.audioManager.setMuted(sound === 'false');
     } catch {}
     this.#soundToggle.checked = !this.#game.audioManager.isMuted;
-    this.#qualityToggle.checked = this.#game.renderer.pixelDensityCap > 1;
     this.#toggle.addEventListener('click', this.#show);
     this.#panel.querySelector('#settings-close').addEventListener('click', this.#hide);
     this.#panel.addEventListener('click', (event) => {
@@ -84,6 +83,7 @@ export class SettingsMenu {
     this.#status.textContent = '';
     this.#touchToggle.checked = this.#controls.visible;
     this.#soundToggle.checked = !this.#game.audioManager.isMuted;
+    this.#qualityToggle.checked = this.#game.renderer.pixelDensityCap > 1;
     this.#panel.hidden = false;
     this.#toggle.setAttribute('aria-expanded', 'true');
     this.#game.pause();
