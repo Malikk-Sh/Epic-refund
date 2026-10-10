@@ -82,8 +82,12 @@ export class Camera {
   }
 
   update(dt) {
-    this.#x += (this.#targetX - this.#x) * LERP_SPEED;
-    this.#y += (this.#targetY - this.#y) * LERP_SPEED;
+    // Одно и то же следование на 30, 60 и 120 Гц. Старое постоянное
+    // LERP_SPEED за кадр делало камеру вдвое ленивее на слабых смартфонах.
+    const frameCount = Math.max(0, dt * 60);
+    const blend = 1 - Math.pow(1 - LERP_SPEED, frameCount);
+    this.#x += (this.#targetX - this.#x) * blend;
+    this.#y += (this.#targetY - this.#y) * blend;
 
     if (this.#transitioning) {
       this.#transitionTimer -= dt;
@@ -100,7 +104,7 @@ export class Camera {
     if (this.#shakeIntensity > 0.1) {
       this.#shakeOffsetX = (Math.random() * 2 - 1) * this.#shakeIntensity;
       this.#shakeOffsetY = (Math.random() * 2 - 1) * this.#shakeIntensity;
-      this.#shakeIntensity *= SHAKE_DECAY;
+      this.#shakeIntensity *= Math.pow(SHAKE_DECAY, frameCount);
     } else {
       this.#shakeIntensity = 0;
       this.#shakeOffsetX = 0;
