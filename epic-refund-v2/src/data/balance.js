@@ -17,6 +17,7 @@ export const BALANCE = {
     rollCooldown: 0.55,
     staminaMax: 100,
     staminaRegen: 25,
+    manaRegen: 8,
     staminaRegenDelay: 0.8,
   },
 
