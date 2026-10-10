@@ -2,6 +2,7 @@
 // Объединяет: игрок, уровень с комнатами, HUD, диалоги, Врата UI, частицы.
 
 import { Player } from '../entities/Player.js';
+import { AbilitySystem } from '../systems/AbilitySystem.js';
 import { HUD } from '../ui/HUD.js';
 import { DialogueSystem } from '../ui/DialogueSystem.js';
 import { GateUI } from '../ui/GateUI.js';
@@ -27,6 +28,7 @@ export class GameScene {
   #gateUI;
   #notifications;
   #particles;
+  #abilities;
 
   // Накопленные атаки этого кадра
   #pendingAttacks = [];
@@ -67,6 +69,10 @@ export class GameScene {
 
     // События
     this.#setupEventHandlers();
+    this.#abilities = new AbilitySystem({
+      player: this.#player, skillTree: d.skillTree, eventBus: d.eventBus,
+      camera: d.camera, getRoom: () => this.#level?.currentRoom,
+    });
 
     // Загружаем последний контрольный пункт, либо создаём новый.
     const saved = d.saveManager.loadAuto();
@@ -88,6 +94,7 @@ export class GameScene {
   // fromDirection — с какой стороны игрок вошёл (для точки спавна).
   #loadLevel(levelKey, startRoomId = null, fromDirection = null) {
     const d = this.#deps;
+    this.#abilities?.reset();
 
     this.#currentLevelKey = levelKey;
     this.#level = createLevelByKey(levelKey, {
@@ -174,6 +181,7 @@ export class GameScene {
     }
     this.#completed = false;
     this.#pendingAttacks = [];
+    this.#abilities.reset();
     this.#gateUI.hide();
     if (this.#dialogue.isActive) this.#dialogue.hide();
     d.gateSystem.deserialize(saved.gates ?? {});
@@ -417,6 +425,7 @@ export class GameScene {
     // Основной апдейт
     const room = this.#level.currentRoom;
     this.#player.update(dt, input, room.tilemap);
+    this.#abilities.update(dt);
     this.#level.update(dt, this.#player);
     this.#particles.update(dt);
     this.#notifications.update(dt);
@@ -566,6 +575,7 @@ export class GameScene {
     // Мир
     const room = this.#level.currentRoom;
     this.#worldRenderer.drawRoom(room, this.#player);
+    this.#abilities.draw(d.renderer.ctx, d.camera);
 
     // Частицы
     this.#particles.render(d.renderer.ctx);
@@ -661,6 +671,7 @@ export class GameScene {
   }
 
   destroy() {
+    this.#abilities?.destroy();
     for (const unsub of this.#unsubs) unsub();
     this.#unsubs = [];
   }
