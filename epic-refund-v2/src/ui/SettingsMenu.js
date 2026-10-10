@@ -66,6 +66,9 @@ export class SettingsMenu {
     });
     this.#qualityToggle.addEventListener('change', () => {
       this.#game.renderer.setPixelDensityCap(this.#qualityToggle.checked ? 2 : 1);
+      // Resize очищает canvas; меню ставит игру на паузу, поэтому перерисуем
+      // последний кадр вручную, не возобновляя игровую симуляцию.
+      this.#game.redrawFrame();
       try { localStorage.setItem('epic_refund_retina', String(this.#qualityToggle.checked)); } catch {}
     });
     this.#soundToggle.addEventListener('change', () => {
