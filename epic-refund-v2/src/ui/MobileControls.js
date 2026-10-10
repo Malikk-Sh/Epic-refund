@@ -26,6 +26,7 @@ export class MobileControls {
   #visible = false;
   #unsubscribeChoices = null;
   #unsubscribeGate = null;
+  #unsubscribeAbilities = null;
 
   constructor(input, eventBus) {
     this.#input = input;
@@ -56,6 +57,22 @@ export class MobileControls {
     });
     this.#unsubscribeGate = eventBus.on('ui:gate', ({ visible }) => {
       this.#root.querySelector('#mobile-gate-nav').classList.toggle('gate-nav-visible', Boolean(visible));
+    });
+    this.#unsubscribeAbilities = eventBus.on('ability:status', ({ slots }) => {
+      for (const slot of slots) {
+        const button = this.#root.querySelector('#mobile-skills [data-action="' + slot.action + '"]');
+        if (!button) continue;
+        const label = SKILL_ACTIONS.find(([action]) => action === slot.action)?.[1] ?? '★';
+        const next = slot.cooldown > 0 ? String(Math.ceil(slot.cooldown)) : label;
+        if (button.textContent !== next) button.textContent = next;
+        button.classList.toggle('cooling', slot.cooldown > 0);
+        button.classList.toggle('unavailable', !slot.available);
+        button.classList.toggle('ability-active', Boolean(slot.active));
+        button.setAttribute('aria-label', slot.available
+          ? (slot.active ? 'Выключить навык ' : 'Применить навык ') + label +
+            (slot.cooldown > 0 ? ', восстановление ' + Math.ceil(slot.cooldown) + ' секунд' : '')
+          : 'Навык ' + label + ' потерян');
+      }
     });
 
     const touch = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
@@ -156,6 +173,7 @@ export class MobileControls {
     this.#releaseAll();
     this.#unsubscribeChoices?.();
     this.#unsubscribeGate?.();
+    this.#unsubscribeAbilities?.();
     document.body.classList.remove('touch-active');
     this.#root.remove();
   }
