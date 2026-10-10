@@ -74,6 +74,7 @@ const { DialogueSystem } = await import('../src/ui/DialogueSystem.js');
 const { GateUI } = await import('../src/ui/GateUI.js');
 const { Player } = await import('../src/entities/Player.js');
 const { Renderer } = await import('../src/core/Renderer.js');
+const { Camera } = await import('../src/core/Camera.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -939,6 +940,33 @@ describe('Mobile and checkpoint regressions', () => {
 
 
 // Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Smooth 30/60/120Hz camera', () => {
+  it('камера одинаково следует за целью при любом FPS', () => {
+    const simulate = fps => {
+      const camera = new Camera();
+      camera.setViewSize(768,432);
+      camera.setWorldBounds(0,0,2500,2500);
+      camera.snapTo({x:600,y:600});
+      camera.follow({x:850,y:700});
+      for(let i=0;i<fps;i++)camera.update(1/fps);
+      return { x: camera.x, y: camera.y };
+    };
+    const x30=simulate(30), x60=simulate(60), x120=simulate(120);
+    expect(Math.abs(x30.x-x60.x)<.01).toBe(true);
+    expect(Math.abs(x120.y-x60.y)<.01).toBe(true);
+  });
+
+  it('камера не сдвигается при нулевом dt', () => {
+    const camera = new Camera();
+    camera.setWorldBounds(0,0,2500,2500);
+    camera.snapTo({x:500,y:500});
+    camera.follow({x:900,y:900});
+    const oldX = camera.x;
+    camera.update(0);
+    expect(camera.x).toBe(oldX);
+  });
+});
+
 describe('Combat responsiveness and Retina mobile rendering', () => {
   function fixture() {
     const bus = new EventBus();
