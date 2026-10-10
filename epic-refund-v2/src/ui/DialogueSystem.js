@@ -46,6 +46,7 @@ export class DialogueSystem {
     this.#choiceMode = false;
     this.#choices    = [];
     this.#active     = true;
+    this.#eventBus.emit('ui:choices', { visible: false });
     this.#fullText   = text ?? '';
     this.#currentText = '';
     this.#speaker    = speaker;
@@ -67,6 +68,7 @@ export class DialogueSystem {
   // Читает следующий шаг из runner и обновляет состояние.
   #advanceRunner() {
     const step = this.#runner.peek();
+    this.#eventBus.emit('ui:choices', { visible: step.type === 'choices' });
 
     if (step.type === 'line') {
       this.#fullText    = step.text;
@@ -94,6 +96,7 @@ export class DialogueSystem {
     this.#runner     = null;
     this.#choiceMode = false;
     this.#choices    = [];
+    this.#eventBus.emit('ui:choices', { visible: false });
     this.#eventBus.emit('npc:dialogueEnd', {});
   }
 
