@@ -301,6 +301,33 @@ export class GameScene {
       }
     });
 
+    // Обратная связь: на смартфоне игрок должен сразу видеть результат нажатия.
+    const ABILITY_NAMES = {
+      str_t3: 'Вихрь клинков', mag_t2: 'Огненный шар', agi_t3: 'Скрытность',
+      str_t4: 'Танец смерти', mag_t4: 'Армагеддон', def_t4: 'Неуязвимость',
+      agi_t4: 'Телепортация', aur_t4: 'Аура аннигиляции',
+    };
+    on('ability:cast', ({ skillId, kind }) => {
+      if (kind === 'backstab') {
+        this.#notifications.show('УДАР ИЗ ТЕНИ ×3', 1.0, '#84e8a9');
+        return;
+      }
+      this.#notifications.show(ABILITY_NAMES[skillId] ?? 'Навык применён', 1.2, '#b4d8ff');
+      this.#particles.hitSparks(this.#player.x, this.#player.y, '#b5ccff', 9);
+    });
+    on('ability:blocked', ({ reason }) => {
+      const msg = reason === 'cooldown' ? 'Навык восстанавливается' :
+        reason === 'resource' ? 'Недостаточно энергии' : 'Нет места для телепорта';
+      this.#notifications.show(msg, 1.0, '#d5ad76');
+    });
+    on('ability:hit', ({ x, y, damage }) => {
+      this.#notifications.showDamage(Math.round(damage), x, y - 9, '#9ad5ff');
+      this.#particles.hitSparks(x, y, '#84c7ff', 4);
+    });
+    on('ability:impact', ({ x, y }) => {
+      this.#particles.hitSparks(x, y, '#ff994d', 14);
+    });
+
     // Парирование
     on('player:parrySuccess', ({ perfect }) => {
       this.#notifications.show(perfect ? 'ИДЕАЛЬНОЕ ПАРИРОВАНИЕ' : 'Парирование',
