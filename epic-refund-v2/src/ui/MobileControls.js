@@ -27,6 +27,7 @@ export class MobileControls {
   #unsubscribeChoices = null;
   #unsubscribeGate = null;
   #unsubscribeAbilities = null;
+  #unsubscribeDialogue = null;
 
   constructor(input, eventBus) {
     this.#input = input;
@@ -57,6 +58,12 @@ export class MobileControls {
     });
     this.#unsubscribeGate = eventBus.on('ui:gate', ({ visible }) => {
       this.#root.querySelector('#mobile-gate-nav').classList.toggle('gate-nav-visible', Boolean(visible));
+      this.#root.classList.toggle('gate-active', Boolean(visible));
+      if (visible) this.#releaseAll();
+    });
+    this.#unsubscribeDialogue = eventBus.on('ui:dialogue', ({ visible }) => {
+      this.#root.classList.toggle('dialogue-active', Boolean(visible));
+      if (visible) this.#releaseAll();
     });
     this.#unsubscribeAbilities = eventBus.on('ability:status', ({ slots }) => {
       for (const slot of slots) {
@@ -174,6 +181,7 @@ export class MobileControls {
     this.#unsubscribeChoices?.();
     this.#unsubscribeGate?.();
     this.#unsubscribeAbilities?.();
+    this.#unsubscribeDialogue?.();
     document.body.classList.remove('touch-active');
     this.#root.remove();
   }
