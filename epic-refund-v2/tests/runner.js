@@ -65,6 +65,8 @@ const { createLevel02 } = await import('../src/levels/Level02_Barracks.js');
 const { createLevel03 } = await import('../src/levels/Level03_Dungeons.js');
 const { createLevelByKey, hasLevel, getLevelKeys } = await import('../src/levels/LevelRegistry.js');
 const { Homunculus } = await import('../src/entities/enemies/bosses/Homunculus.js');
+const { InputManager } = await import('../src/core/InputManager.js');
+const { SaveManager } = await import('../src/core/SaveManager.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -806,6 +808,107 @@ describe('KaneDialogues', () => {
     for (const p of phases) {
       const line = pickKaneLine('skillAttempt', 'all', p);
       expect(typeof line === 'string').toBe(true);
+    }
+  });
+});
+
+
+describe('Mobile and checkpoint regressions', () => {
+  it('закрытые Врата блокируют только выход вперёд', () => {
+    const systems = makeLevelSystems();
+    const level = createLevel01(systems);
+    const room = level.rooms.get('l1_room_04');
+    for (const enemy of room.enemies) {
+      enemy.isAlive = false;
+      enemy.hp = 0;
+    }
+    room.update(0.016, { x: 30, y: 30 }, systems.fearSystem, systems.skillTree, systems.eventBus);
+    const east = room.doors.find(d => d.direction === 'east');
+    const west = room.doors.find(d => d.direction === 'west');
+    expect(room.tilemap.getTile(east.tileCol, east.tileRow)).toBe(3);
+    expect(room.tilemap.getTile(west.tileCol, west.tileRow)).toBe(4);
+    expect(room.checkDoorTrigger(room.tilemap.tileToWorldCenter(east.tileCol, east.tileRow))).toBe(null);
+    const gate = new GateSystem(systems.eventBus, systems.skillTree);
+    systems.eventBus.on('gate:open', ({ gateId }) => {
+      if (gateId === room.gate.id) room.openGate();
+    });
+    expect(gate.approach(room.gate, 1)).toBe(true);
+    expect(gate.sacrifice('str_t4')).toBe(true);
+    expect(room.isGateOpen).toBe(true);
+    expect(room.checkDoorTrigger(room.tilemap.tileToWorldCenter(east.tileCol, east.tileRow)) !== null).toBe(true);
+  });
+
+  it('частичная жертва сохраняется при отмене', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const gate = new GateSystem(bus, tree);
+    const data = { id: 'major_resume', requirement: 'choice', size: 'major' };
+    gate.approach(data, 2);
+    gate.sacrifice('str_t4');
+    gate.cancel();
+    gate.approach(data, 2);
+    expect(gate.getSacrificesRemaining()).toBe(1);
+    expect(gate.serialize().major_resume).toContain('str_t4');
+  });
+
+  it('смерть босса отправляет событие ровно один раз', () => {
+    const bus = new EventBus();
+    const boss = new Homunculus(20, 20, bus);
+    let deaths = 0;
+    bus.on('boss:defeat', () => deaths++);
+    boss.takeDamage(10000, 0, 0);
+    boss.takeDamage(10000, 0, 0);
+    expect(deaths).toBe(1);
+  });
+
+  it('сенсорное действие попадает в обработчик игрового ввода', () => {
+    const previous = globalThis.window;
+    const listeners = new Map();
+    globalThis.window = {
+      addEventListener(name, fn) {
+        if (!listeners.has(name)) listeners.set(name, new Set());
+        listeners.get(name).add(fn);
+      },
+      removeEventListener(name, fn) { listeners.get(name)?.delete(fn); },
+    };
+    try {
+      const input = new InputManager();
+      input.pressVirtual('right');
+      input.pressVirtual('attackLight');
+      expect(input.getMovementVector().x).toBe(1);
+      expect(input.isPressed('attackLight')).toBe(true);
+      input.flush();
+      expect(input.isPressed('attackLight')).toBe(false);
+      input.releaseVirtual('right');
+      expect(input.getMovementVector().x).toBe(0);
+      input.destroy();
+      expect(listeners.get('keydown').size).toBe(0);
+    } finally {
+      globalThis.window = previous;
+    }
+  });
+
+  it('контрольный пункт сохраняется и восстанавливается', () => {
+    const previous = globalThis.localStorage;
+    const data = new Map();
+    globalThis.localStorage = {
+      setItem(k, v) { data.set(k, v); },
+      getItem(k) { return data.get(k) ?? null; },
+      removeItem(k) { data.delete(k); },
+    };
+    try {
+      const saves = new SaveManager();
+      expect(saves.autoSave({
+        version: '0.3.0',
+        currentLevelKey: 'level_02',
+        currentRoomId: 'l2_room_03',
+        gates: {},
+      })).toBe(true);
+      expect(saves.loadAuto().currentRoomId).toBe('l2_room_03');
+      saves.deleteSave('auto');
+      expect(saves.loadAuto()).toBe(null);
+    } finally {
+      globalThis.localStorage = previous;
     }
   });
 });
