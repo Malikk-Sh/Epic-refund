@@ -44,6 +44,9 @@ export class GameScene {
   #worldState = {};
   #completed = false;
   #damageTintTimer = 0;
+  #roomEpoch = 0;
+  #deferredRoomEvents = new Set();
+  #gamePaused = false;
 
   constructor(deps) {
     this.#deps = deps;
@@ -90,11 +93,32 @@ export class GameScene {
     this.#saveCheckpoint();
   }
 
+  // Изолируем все задержанные реплики от комнаты, в которой они начались.
+  // Иначе сообщение об уровне/боссе может прервать диалог спустя несколько секунд
+  // после перехода в другую комнату или после смерти.
+  #clearDeferredRoomEvents() {
+    this.#roomEpoch++;
+    for (const timer of this.#deferredRoomEvents) clearTimeout(timer);
+    this.#deferredRoomEvents.clear();
+  }
+
+  #deferInRoom(fn, milliseconds) {
+    const epoch = this.#roomEpoch;
+    const timer = setTimeout(() => {
+      this.#deferredRoomEvents.delete(timer);
+      if (epoch !== this.#roomEpoch || !this.#player?.isAlive ||
+          this.#completed || this.#gamePaused) return;
+      fn();
+    }, milliseconds);
+    this.#deferredRoomEvents.add(timer);
+  }
+
   // Загрузка/смена уровня.
   // startRoomId — конкретная стартовая комната (для межуровневых переходов).
   // fromDirection — с какой стороны игрок вошёл (для точки спавна).
   #loadLevel(levelKey, startRoomId = null, fromDirection = null) {
     const d = this.#deps;
+    this.#clearDeferredRoomEvents();
     this.#abilities?.reset();
     this.#player.clearBufferedAction();
 
@@ -205,8 +229,9 @@ export class GameScene {
     if (!intro) return;
 
     this.#notifications.show(intro.title, 3.0, '#c8a96e');
-    setTimeout(() => {
-      d.eventBus.emit('player:speaks', { line: intro.line, duration: 4 });
+    this.#deferInRoom(() => {
+      if (!this.#dialogue.isActive && !this.#gateUI.visible)
+        d.eventBus.emit('player:speaks', { line: intro.line, duration: 4 });
     }, 1500);
   }
 
@@ -237,6 +262,8 @@ export class GameScene {
   #setupEventHandlers() {
     const { eventBus } = this.#deps;
     const on = (ev, fn) => this.#unsubs.push(eventBus.on(ev, fn));
+    on('game:pause', () => { this.#gamePaused = true; });
+    on('game:resume', () => { this.#gamePaused = false; });
     on('ui:dialogue', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
     on('ui:gate', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
 
@@ -276,9 +303,10 @@ export class GameScene {
       if (count <= 10) subcat = 'half';
       if (count <= 3)  subcat = 'last';
 
-      setTimeout(() => {
+      this.#deferInRoom(() => {
         const line = pickKaneLine('skillLost', subcat, phase);
-        if (line) eventBus.emit('player:speaks', { line, duration: 3.5 });
+        if (line && !this.#dialogue.isActive && !this.#gateUI.visible)
+          eventBus.emit('player:speaks', { line, duration: 3.5 });
       }, 3000);
 
       // Обновить реплики NPC во всех комнатах
@@ -390,7 +418,10 @@ export class GameScene {
 
       const line = KANE_DIALOGUES.boss?.phase?.[bossId]?.[phase - 2];
       if (line) {
-        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 3 }), 400);
+        this.#deferInRoom(() => {
+          if (!this.#dialogue.isActive && !this.#gateUI.visible)
+            eventBus.emit('player:speaks', { line, duration: 3 });
+        }, 400);
       }
     });
 
@@ -401,7 +432,10 @@ export class GameScene {
       const lines = KANE_DIALOGUES.boss?.defeat?.[bossId];
       if (lines && lines.length) {
         const line = lines[Math.floor(Math.random() * lines.length)];
-        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 4 }), 1200);
+        this.#deferInRoom(() => {
+          if (!this.#dialogue.isActive && !this.#gateUI.visible)
+            eventBus.emit('player:speaks', { line, duration: 4 });
+        }, 1200);
       }
     });
   }
@@ -502,13 +536,22 @@ export class GameScene {
           // Первый раз — комментарий Кейна
           if (!this.#firstGateApproached) {
             this.#firstGateApproached = true;
-            setTimeout(() => {
-              this.#deps.eventBus.emit('player:speaks', {
-                line: KANE_DIALOGUES.nearGate.first[0],
-                duration: 4,
-              });
-              // Откроем UI после реплики
-              setTimeout(() => this.#gateUI.show(), 4500);
+            this.#deferInRoom(() => {
+              if (!this.#dialogue.isActive) {
+                this.#deps.eventBus.emit('player:speaks', {
+                  line: KANE_DIALOGUES.nearGate.first[0],
+                  duration: 4,
+                });
+              }
+              // Жертва появляется только если игрок ещё рядом с теми же Вратами.
+              this.#deferInRoom(() => {
+                const currentGate = this.#level.currentRoom.gate;
+                if (!this.#deps.gateSystem.isActive() || !currentGate) return;
+                const d = MathUtils.distance(
+                  this.#player.x, this.#player.y, currentGate.x, currentGate.y);
+                if (d <= 24) this.#gateUI.show();
+                else this.#deps.gateSystem.cancel();
+              }, 4500);
             }, 300);
           } else {
             this.#gateUI.show();
@@ -599,6 +642,7 @@ export class GameScene {
       return;
     }
 
+    this.#clearDeferredRoomEvents();
     this.#level.transitionToRoom(door.toRoomId, door.targetSpawnDir, this.#player);
     this.#bossEncountered = false;
     this.#setupCameraForRoom(door.targetSpawnDir);
@@ -725,6 +769,7 @@ export class GameScene {
   }
 
   destroy() {
+    this.#clearDeferredRoomEvents();
     this.#abilities?.destroy();
     for (const unsub of this.#unsubs) unsub();
     this.#unsubs = [];
