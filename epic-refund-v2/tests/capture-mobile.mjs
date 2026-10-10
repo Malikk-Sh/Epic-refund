@@ -69,6 +69,7 @@ try{
     await go(level,id);
     if(!await page.evaluate(()=>window.__epicQA.qaShowGate()))throw Error('Gate cannot be shown: '+id);
     if(!await page.locator('#mobile-gate-nav').evaluate(el=>el.classList.contains('gate-nav-visible')))throw Error('Mobile Gate navigation missing: '+id);
+    if(!await page.locator('#mobile-controls').evaluate(el=>el.classList.contains('gate-active')))throw Error('Mobile combat controls still active during gate: '+id);
     await snap('gate-'+id+'-select');
     await page.evaluate(()=>window.__epicQA.qaOpenGate());
     if(await page.locator('#mobile-gate-nav').evaluate(el=>el.classList.contains('gate-nav-visible')))throw Error('Mobile Gate navigation remains after closing: '+id);
@@ -77,7 +78,12 @@ try{
   await go('level_01','l1_room_06');
   for(const p of [1,2,3]){await page.evaluate(p=>window.__epicQA.qaBossPhase(p),p);await snap('boss-phase-'+p);}
   await go('level_02','l2_room_01');
-  if(await page.evaluate(()=>window.__epicQA.qaTalk()))await snap('dialogue-gribl');
+  if(await page.evaluate(()=>window.__epicQA.qaTalk())){
+    if(!await page.locator('#mobile-controls').evaluate(el=>el.classList.contains('dialogue-active')))throw Error('Combat controls not hidden in dialogue');
+    if(await page.locator('#move-pad').isVisible())throw Error('Joystick still covers dialogue');
+    if(!await page.locator('#mobile-actions [data-action="interact"]').isVisible())throw Error('Interact should stay visible');
+    await snap('dialogue-gribl');
+  }
   // Проверяем настоящий touch-tap на кнопке навыка, не только QA-вызов use().
   await go('level_01','l1_room_02');
   await page.locator('#mobile-skills [data-action="skill2"]').tap();
