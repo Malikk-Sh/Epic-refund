@@ -91,6 +91,20 @@ try{
   await go('level_01','l1_room_01');
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
+  // Экранный справочник и поддержка опциональной вибрации.
+  const guide=page.locator('#settings-panel .settings-help');
+  if(!await guide.count())throw Error('Mobile help is not available in settings');
+  await guide.locator('summary').click();
+  if(!await guide.getByText('Левый круг', {exact:false}).isVisible())
+    throw Error('Mobile controls help content did not expand');
+  const haptics=page.locator('#settings-haptics-toggle');
+  if(await haptics.isEnabled()) {
+    await haptics.check();
+    if(await page.evaluate(()=>localStorage.getItem('epic_refund_haptics'))!=='true')
+      throw Error('Haptics preference not persisted');
+    await haptics.uncheck();
+  }
+  await snap('settings-mobile-help');
   // Проверяем реальный UI mute toggle, включая сохранение настройки.
   const soundToggle = page.locator('#settings-sound-toggle');
 
