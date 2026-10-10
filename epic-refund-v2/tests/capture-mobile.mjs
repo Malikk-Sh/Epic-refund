@@ -6,13 +6,20 @@ import os from 'node:os';
 import path from 'node:path';
 const root=process.cwd(),dest=path.resolve(process.env.EPIC_SCREENSHOT_DIR||'qa-screenshots');
 const temp=await mkdtemp(path.join(os.tmpdir(),'epic-qa-'));let browser,server;
-const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#abilities.reset(true);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaAbility(skillId) {\n    const room=this.#level.currentRoom;\n    const target=room.enemies.find(e=>e.isAlive);\n    if (target) {\n      this.#player.x=target.x-36; this.#player.y=target.y;\n      this.#player.facingX=1;this.#player.facingY=0;\n    }\n    this.#player.mana=100;\n    this.#player.stamina=100;\n    return this.#abilities.use(skillId);\n  }\n  qaTouchAimSetup() {\n    const target=this.#level.currentRoom.enemies.find(e=>e.isAlive);\n    if(!target)return false;\n    this.__qaTarget=target;\n    // Freeze only the QA dummy: fleeing AI must not leave melee range mid-screenshot.\n    target.update=()=>{};\n    this.#player.x=target.x+22;this.#player.y=target.y;\n    this.#player.facingX=1;this.#player.facingY=0;\n    this.#player.stamina=100;\n    return true;\n  }\n  qaTouchAimResult() {\n    return {facingX:this.#player.facingX,\n      hp:this.__qaTarget?.hp ?? null,\n      target:this.#player.aimTarget===this.__qaTarget};\n  }\n  qaAttackInputState() {\n    return {held:this.#deps.inputManager.isHeld('attackLight'),\n      alive:this.#player.isAlive,phase:this.#player.state,\n      dialogue:this.#dialogue.isActive,gate:this.#gateUI.visible};\n  }\n  qaSetNarrativeMute(value) { this.__qaMuteNarrative=Boolean(value); }\n  qaBeginAttackCount() {\n    this.__qaAttackUnsub?.();\n    this.__qaAttacks=0;\n    this.__qaAttackUnsub=this.#deps.eventBus.on('player:attack',()=>this.__qaAttacks++);\n  }\n  qaAttackCount() { return this.__qaAttacks ?? 0; }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
+const qa="\n  qaGoTo(levelKey,roomId) {\n    this.#gateUI.hide();\n    if (this.#dialogue.isActive) this.#dialogue.hide();\n    this.#deps.gateSystem.cancel();\n    this.#worldState = {};\n    this.#loadLevel(levelKey,roomId);\n    this.#abilities.reset(true);\n    this.#player.reviveFromCheckpoint();\n  }\n  qaShowGate() {\n    const r = this.#level.currentRoom;\n    if (!r.gate) return false;\n    this.#player.x = r.gate.x; this.#player.y = r.gate.y;\n    if (!this.#deps.gateSystem.approach(r.gate,this.#level.levelNumber)) return false;\n    this.#gateUI.show(); return this.#gateUI.visible;\n  }\n  qaOpenGate() {\n    this.#gateUI.hide();\n    this.#deps.gateSystem.cancel();\n    this.#level.currentRoom.openGate();\n  }\n  qaTalk() {\n    const npc=this.#level.currentRoom.npcs[0];\n    if (!npc) return false;\n    this.#player.x=npc.x;this.#player.y=npc.y;\n    npc.update(0,this.#player);npc.interact(this.#deps.eventBus);\n    return this.#dialogue.isActive;\n  }\n  qaBossPhase(p) {\n    const b=this.#level.currentRoom.enemies.find(e=>e.isBoss);\n    if (!b) return false;\n    b.hp=Math.round(b.maxHP*(p===1?.94:p===2?.55:.23));\n    b.update(0,this.#player,this.#deps.fearSystem,this.#deps.skillTree,this.#level.currentRoom.tilemap);\n    return true;\n  }\n  qaSkillCount(target) {\n    const tree=this.#deps.skillTree;\n    while(tree.getActiveSkillCount()>target) {\n      const options=tree.getRemovableSkills('choice');\n      if(!options.length)break;\n      tree.removeSkill(options[0].id,this.#level.levelNumber);\n    }\n  }\n  qaAbility(skillId) {\n    const room=this.#level.currentRoom;\n    const target=room.enemies.find(e=>e.isAlive);\n    if (target) {\n      this.#player.x=target.x-36; this.#player.y=target.y;\n      this.#player.facingX=1;this.#player.facingY=0;\n    }\n    this.#player.mana=100;\n    this.#player.stamina=100;\n    return this.#abilities.use(skillId);\n  }\n  qaTouchAimSetup() {\n    const target=this.#level.currentRoom.enemies.find(e=>e.isAlive);\n    if(!target)return false;\n    this.__qaTarget=target;\n    // Freeze only the QA dummy: fleeing AI must not leave melee range mid-screenshot.\n    target.update=()=>{};\n    this.#player.x=target.x+22;this.#player.y=target.y;\n    this.#player.facingX=1;this.#player.facingY=0;\n    this.#player.stamina=100;\n    return true;\n  }\n  qaTouchAimResult() {\n    return {facingX:this.#player.facingX,\n      hp:this.__qaTarget?.hp ?? null,\n      target:this.#player.aimTarget===this.__qaTarget};\n  }\n  qaAttackInputState() {\n    return {held:this.#deps.inputManager.isHeld('attackLight'),\n      alive:this.#player.isAlive,phase:this.#player.state,\n      dialogue:this.#dialogue.isActive,gate:this.#gateUI.visible};\n  }\n  qaSetNarrativeMute(value) { this.__qaMuteNarrative=Boolean(value); }\n  qaBeginAttackCount() {\n    this.__qaAttackUnsub?.();\n    this.__qaAttacks=0;\n    this.__qaAttackUnsub=this.#deps.eventBus.on('player:attack',()=>this.__qaAttacks++);\n  }\n  qaAttackCount() { return this.__qaAttacks ?? 0; }\n  qaQueueDialogue() {\n    this.#deferInRoom(()=>this.#deps.eventBus.emit('player:speaks',{\n      line:'Эта реплика относится к старой комнате',duration:4\n    }),180);\n  }\n  qaDialogueVisible() { return this.#dialogue.isActive; }\n  qaDie() {this.#player.hp=0;this.#player.isAlive=false;}\n";
 const errors=[], images=[];
 async function pause(ms){return new Promise(r=>setTimeout(r,ms));}
 try{
   await mkdir(dest,{recursive:true});
   const folder=path.join(temp,'game');
   await cp(root,folder,{recursive:true,filter:p=>!p.split(path.sep).includes('node_modules')&&!p.split(path.sep).includes('qa-screenshots')});
+  // Game reference exists only in the temporary QA directory.
+  const mainFile=path.join(folder,'src/main.js');
+  let mainSource=await readFile(mainFile,'utf8');
+  const gameMarker='    await game.init(canvas);';
+  if(!mainSource.includes(gameMarker))throw Error('Game reference QA hook missing');
+  mainSource=mainSource.replace(gameMarker, gameMarker+'\\n    window.__epicGame=game;'.replace('\\n','\n'));
+  await writeFile(mainFile, mainSource);
   const filename=path.join(folder,'src/ui/GameScene.js');
   let code=await readFile(filename,'utf8');
   const init='    this.#saveCheckpoint();\n  }\n\n  // Изолируем';
@@ -71,6 +78,16 @@ try{
   if(aimAfter.facingX>=0 || aimAfter.hp>=aimBefore.hp)
     throw Error('Touch melee did not hit behind-player enemy: '+JSON.stringify({aimBefore,aimAfter,aimStatusBefore,aimStatusAfter}));
 
+  // Старые фразы не должны появляться после перехода через дверь.
+  await go('level_01','l1_room_01');
+  await page.evaluate(()=>window.__epicQA.qaSetNarrativeMute(false));
+  await page.evaluate(()=>window.__epicQA.qaQueueDialogue());
+  await go('level_01','l1_room_02');
+  await page.waitForTimeout(230);
+  if(await page.evaluate(()=>window.__epicQA.qaDialogueVisible()))
+    throw Error('Delayed dialogue leaked into another room');
+  await page.evaluate(()=>window.__epicQA.qaSetNarrativeMute(true));
+  await snap('dialogue-no-stale-room-event');
   await go('level_01','l1_room_01');
   await page.locator('#settings-open').click();
   if(!await page.locator('#settings-panel').isVisible())throw Error('Settings not visible');
@@ -106,7 +123,17 @@ try{
   if (!fullscreen.active && !fullscreen.message) throw Error('Fullscreen control gave no result');
   await snap('02-fullscreen-toggle');
   if (fullscreen.active) await page.locator('#settings-fullscreen').click();
+  // Скрытие/появление вкладки не может снять паузу с открытых настроек.
+  await page.evaluate(()=>window.__epicGame.pause('visibility'));
+  if(!await page.evaluate(()=>window.__epicGame.isPaused))
+    throw Error('Visibility did not pause game');
+  await page.evaluate(()=>window.__epicGame.resume('visibility'));
+  if(!await page.evaluate(()=>window.__epicGame.isPaused &&
+    window.__epicGame.pauseReasons.includes('settings')))
+    throw Error('Visibility resume unpaused an open settings menu');
   await page.locator('#settings-close').click();
+  if(await page.evaluate(()=>window.__epicGame.isPaused))
+    throw Error('Closing settings did not resume gameplay');
   for(const [level,n] of [['level_01',6],['level_02',7],['level_03',8]]){
     for(let i=1;i<=n;i++){
       const id='l'+Number(level.slice(-2))+'_room_'+String(i).padStart(2,'0');
