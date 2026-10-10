@@ -168,6 +168,7 @@ export class MobileControls {
 
   setVisible(visible) {
     this.#visible = Boolean(visible);
+    this.#input.setTouchAssistEnabled(this.#visible);
     this.#root.classList.toggle('visible', this.#visible);
     document.body.classList.toggle('touch-active', this.#visible);
     if (!this.#visible) this.#releaseAll();
