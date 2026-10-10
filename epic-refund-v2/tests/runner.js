@@ -69,6 +69,7 @@ const { InputManager } = await import('../src/core/InputManager.js');
 const { SaveManager } = await import('../src/core/SaveManager.js');
 const { HUD } = await import('../src/ui/HUD.js');
 const { AbilitySystem } = await import('../src/systems/AbilitySystem.js');
+const { drawHeroArt, drawEnemyArt, drawNpcArt } = await import('../src/render/ActorArt.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -934,6 +935,58 @@ describe('Mobile and checkpoint regressions', () => {
 
 
 // Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Procedural pixel art and compact HUD', () => {
+  function canvas() {
+    const events = [];
+    const ctx = new Proxy({}, {
+      get(obj, key) {
+        if (key === 'fillRect') return (x, y, w, h) => events.push({ x, y, w, h });
+        if (key === 'measureText') return text => ({ width: String(text).length * 8 });
+        return obj[key] ?? (() => {});
+      },
+      set(obj, key, value) { obj[key] = value; return true; },
+    });
+    return { ctx, events };
+  }
+
+  it('Кейн прорисован пиксельными фигурами вместо пустого прямоугольника', () => {
+    const { ctx, events } = canvas();
+    drawHeroArt(ctx, { state: 'move', phase: 'god', facingX: 1, facingY: 0,
+      isInAttack: true, isParrying: false }, 100, 100, 2, 0.5);
+    expect(events.length > 18).toBe(true);
+    expect(events.some(item => item.w <= 2)).toBe(true);
+  });
+
+  it('у скелета, слизи, гоблина и босса разные процедурные силуэты', () => {
+    for (const typeName of ['slime', 'skeleton', 'goblin', 'homunculus']) {
+      const { ctx, events } = canvas();
+      drawEnemyArt(ctx, { typeName, width: 14, height: 14, x: 8,
+        y: 8, isBoss: typeName === 'homunculus', hitFlash: 0, state: 'idle' },
+      50, 50, 2, 0);
+      expect(events.length > 5).toBe(true);
+    }
+  });
+
+  it('NPC имеет отдельную фигуру, не совпадающую с героем', () => {
+    const { ctx, events } = canvas();
+    drawNpcArt(ctx, {}, 50, 50, 2, 0);
+    expect(events.length > 5).toBe(true);
+  });
+
+  it('панель навыков больше не закрывает нижнюю часть арены', () => {
+    const { ctx, events } = canvas();
+    const bus = new EventBus();
+    const skillTree = new SkillTree(bus);
+    const hud = new HUD({ ctx, logicalWidth: 768, logicalHeight: 432 },
+      null, skillTree, bus);
+    hud.draw(0.016, { hp: 150, maxHP: 150, mana: 100, maxMana: 100,
+      stamina: 100, maxStamina: 100 });
+    const centerBottom = events.some(rect => rect.x > 150 && rect.x < 610 &&
+      rect.y > 280 && rect.w > 6);
+    expect(centerBottom).toBe(false);
+  });
+});
+
 describe('Active abilities: mobile + keyboard', () => {
   function fixture() {
     const eventBus = new EventBus();
