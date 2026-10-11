@@ -229,7 +229,7 @@ export class GameScene {
   #announceLevel(levelKey) {
     const d = this.#deps;
     const INTROS = {
-      level_01: { title: 'Уровень 1: Гнилой Пик', line: KANE_DIALOGUES.environment.entered_rotten_peak[0] },
+      level_01: { title: 'Уровень 1: Проклятая тюрьма', line: 'Камень, решётки и чужие голоса. Из этого места есть только один путь — вперёд.' },
       level_02: { title: 'Уровень 2: Казармы Тьмы', line: KANE_DIALOGUES.environment.entered_barracks[0] },
     };
     const intro = INTROS[levelKey];
@@ -399,9 +399,9 @@ export class GameScene {
 
     // Вход в комнату
     on('room:enter', ({ firstVisit, roomId }) => {
-      if (firstVisit) {
-        // Можно показать имя комнаты, но для Milestone 1 тихо
-      }
+      const title = this.#level?.rooms.get(roomId)?.presentation?.title;
+      if (firstVisit && title)
+        this.#notifications.show(title, 2.4, '#e5ba82');
     });
 
     // Открытие Врат
