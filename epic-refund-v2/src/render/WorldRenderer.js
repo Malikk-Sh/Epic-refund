@@ -3,6 +3,7 @@
 
 import { TILE } from '../levels/Tilemap.js';
 import { drawHeroArt, drawEnemyArt, drawNpcArt } from './ActorArt.js';
+import { drawPrisonFloor, drawPrisonProp, prisonTallProps } from './PrisonRoomArt.js';
 
 // Цвета тайлов (для плейсхолдеров)
 const TILE_COLORS = {
@@ -40,20 +41,32 @@ export class WorldRenderer {
     // 1. Тайлмап
     this.#drawTilemap(ctx, tm, cam, room.id);
 
+    // Декали рисуем ПОД персонажами: они не должны выглядеть препятствиями.
+    if (room.presentation?.biome === 'hexed_prison')
+      drawPrisonFloor(ctx, room, cam);
+
     // 2. Врата Забвения (если есть) — под сущностями
     if (room.gate) {
       this.#drawGate(ctx, room.gate, cam);
     }
 
-    // 3. Сущности — сортируем по Y для правильного порядка отрисовки
-    const entities = [...room.getAllEntities(), player].sort((a, b) => a.y - b.y);
-    for (const entity of entities) {
-      if (entity === player) {
-        this.#drawPlayer(ctx, entity, cam);
-      } else if (entity.typeName && entity.hp !== undefined) {
-        this.#drawEnemy(ctx, entity, cam);
+    // Персонажи и высокие декорации сортируются по НОГАМ/основанию, а не
+    // по высоте картинки: проходя за колонной, герой корректно скрывается.
+    const props = room.presentation?.biome === 'hexed_prison' ? prisonTallProps(room) : [];
+    const items = [
+      ...room.getAllEntities().map(entity => ({ entity, y: entity.y })),
+      { entity: player, y: player.y },
+      ...props.map(prop => ({ prop, y: (prop.row + .78) * tm.tileSize })),
+    ].sort((a, b) => a.y - b.y);
+    for (const item of items) {
+      if (item.prop) {
+        drawPrisonProp(ctx, item.prop, tm, cam, performance.now() / 1000);
+      } else if (item.entity === player) {
+        this.#drawPlayer(ctx, item.entity, cam);
+      } else if (item.entity.typeName && item.entity.hp !== undefined) {
+        this.#drawEnemy(ctx, item.entity, cam);
       } else {
-        this.#drawNPC(ctx, entity, cam);
+        this.#drawNPC(ctx, item.entity, cam);
       }
     }
 
@@ -80,9 +93,13 @@ export class WorldRenderer {
   #drawTilemap(ctx, tm, cam, roomId) {
     const ts = tm.tileSize;
     // Каждая локация имеет своё окружение: гниль, укреплённый камень, катакомбы.
-    const biome = roomId?.startsWith('l3') ? 'catacomb' :
+    const biome = roomId === 'l1_room_01' || roomId === 'l1_room_02' ? 'prison' :
+      roomId?.startsWith('l3') ? 'catacomb' :
       roomId?.startsWith('l2') ? 'barracks' : 'peak';
-    const tint = biome === 'peak' ? {
+    const tint = biome === 'prison' ? {
+      floor: '#473735', shade: '#3c3133', wall: '#37333a', edge: '#877064',
+      debris: '#b17d59', crack: '#231f27',
+    } : biome === 'peak' ? {
       floor: '#283029', shade: '#222b25', wall: '#3c493d', edge: '#637466',
       debris: '#5a7653', crack: '#161e1b',
     } : biome === 'barracks' ? {
@@ -108,7 +125,7 @@ export class WorldRenderer {
 
         // Размер тайла в экранных пикселях с учётом zoom
         const sw = ts * cam.zoom;
-        const sh = ts * cam.zoom;
+        const sh = ts * cam.zoom * cam.pitch;
 
         const floor = t === TILE.FLOOR || t === TILE.SPAWN;
         const color = floor ? (((c + r) & 1) ? tint.floor : tint.shade) :
