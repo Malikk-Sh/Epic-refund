@@ -97,7 +97,7 @@ export class WorldRenderer {
       roomId?.startsWith('l3') ? 'catacomb' :
       roomId?.startsWith('l2') ? 'barracks' : 'peak';
     const tint = biome === 'prison' ? {
-      floor: '#473735', shade: '#3c3133', wall: '#37333a', edge: '#877064',
+      floor: '#423535', shade: '#3f3435', wall: '#37333a', edge: '#877064',
       debris: '#b17d59', crack: '#231f27',
     } : biome === 'peak' ? {
       floor: '#283029', shade: '#222b25', wall: '#3c493d', edge: '#637466',
@@ -127,16 +127,29 @@ export class WorldRenderer {
         const sw = ts * cam.zoom;
         const sh = ts * cam.zoom * cam.pitch;
 
+        // Плавная неоднородная кладка вместо шахматного узора на новом биоме.
+        const seed = ((c * 73856093) ^ (r * 19349663)) >>> 0;
         const floor = t === TILE.FLOOR || t === TILE.SPAWN;
-        const color = floor ? (((c + r) & 1) ? tint.floor : tint.shade) :
+        const floorColor = biome === 'prison'
+          ? (seed % 7 < 2 ? tint.shade : tint.floor)
+          : (((c + r) & 1) ? tint.floor : tint.shade);
+        const color = floor ? floorColor :
           (t === TILE.WALL ? tint.wall : TILE_COLORS[t] ?? '#000');
         ctx.fillStyle = color;
         ctx.fillRect(screen.x, screen.y, sw + .2, sh + .2);
-
-        // Не-сеточный ритм материалов: деталь детерминирована координатами тайла.
-        const seed = ((c * 73856093) ^ (r * 19349663)) >>> 0;
         if (floor) {
           const edge = Math.max(1, Math.round(cam.zoom));
+          if (biome === 'prison') {
+            // Тонкая расшивка плит и сколы, не конкурирующие с силуэтом игрока.
+            ctx.fillStyle = '#2c2529';
+            ctx.fillRect(screen.x, screen.y + sh - Math.max(1,cam.zoom*.55),
+              sw, Math.max(1,cam.zoom*.55));
+            if ((r+c) % 3 === 0)
+              ctx.fillRect(screen.x + sw*.18, screen.y + sh*.13,
+                Math.max(1,cam.zoom*.55), sh*.23);
+            ctx.fillStyle = 'rgba(181,122,78,.10)';
+            ctx.fillRect(screen.x + sw*.06, screen.y + sh*.10, sw*.72, Math.max(1,cam.zoom*.5));
+          }
           ctx.fillStyle = tint.crack;
           if ((seed % 6) === 0) {
             ctx.fillRect(screen.x + sw * .18, screen.y + sh * .36,
