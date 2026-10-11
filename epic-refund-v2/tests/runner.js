@@ -1564,6 +1564,60 @@ describe('Active abilities: mobile + keyboard', () => {
   });
 });
 
+describe('Hexed Prison / first playable rooms', () => {
+  it('3/4 камера сохраняет обратимое преобразование координат', () => {
+    const cam=new Camera();
+    cam.setViewSize(768,432);
+    cam.setWorldBounds(0,0,2000,2000);
+    cam.snapTo({x:640,y:640});
+    const p=cam.worldToScreen(120,144);
+    const back=cam.screenToWorld(p.x,p.y);
+    expect(Math.abs(back.x-120)<.000001).toBe(true);
+    expect(Math.abs(back.y-144)<.000001).toBe(true);
+    expect(cam.pitch).toBe(.84);
+    expect(cam.visibleWorldHeight>216).toBe(true);
+    const a=cam.worldToScreen(300,300),b=cam.worldToScreen(324,324);
+    expect(Math.abs((b.y-a.y)/(b.x-a.x)-.84)<.000001).toBe(true);
+  });
+
+  it('не принимает невалидный pitch и позволяет вернуться к прямой проекции', () => {
+    const cam=new Camera();
+    toThrow(()=>cam.setPitch(.2));
+    cam.setPitch(1);
+    expect(cam.pitch).toBe(1);
+  });
+
+  it('Entry Hall содержит четыре физические колонны, южный спавн и северный проход', () => {
+    const level=createLevel01(makeLevelSystems());
+    const r=level.rooms.get('l1_room_01');
+    expect(level.name.includes('Hexed Prison')).toBe(true);
+    expect(r.presentation.title.includes('ENTRY HALL')).toBe(true);
+    expect(r.presentation.props.filter(p=>p.type==='pillar').length).toBe(4);
+    expect(r.doors.some(d=>d.direction==='north'&&d.toRoomId==='l1_room_02')).toBe(true);
+    expect(r.doors.some(d=>d.direction==='east')).toBe(false);
+    expect(r.tilemap.getTile(4,3)).toBe(2);
+    expect(r.tilemap.getTile(7,5)).toBe(1);
+    expect(r.tilemap.worldToTile(r.spawnPoints.default.x,r.spawnPoints.default.y).row).toBe(7);
+  });
+
+  it('Cell Block доступен с юга, блокирует ниши и открывает восточный выход после победы', () => {
+    const level=createLevel01(makeLevelSystems());
+    const r=level.rooms.get('l1_room_02');
+    expect(r.presentation.title.includes('CELL BLOCK')).toBe(true);
+    expect(r.presentation.props.filter(p=>p.type==='bars').length).toBe(4);
+    expect(r.doors.some(d=>d.direction==='south'&&d.toRoomId==='l1_room_01')).toBe(true);
+    expect(r.doors.some(d=>d.direction==='west')).toBe(false);
+    expect(r.tilemap.getTile(3,3)).toBe(2);
+    const spawn=r.getSpawnPosition('south');
+    const t=r.tilemap.worldToTile(spawn.x,spawn.y);
+    expect(r.tilemap.getTile(t.col,t.row)).toBe(1);
+    r.enemies.forEach(e=>{e.isAlive=false;});
+    r.update(.016,{x:spawn.x,y:spawn.y},makeLevelSystems().fearSystem,makeLevelSystems().skillTree,makeLevelSystems().eventBus);
+    expect(r.isCleared).toBe(true);
+    expect(r.doors.some(d=>d.direction==='east')).toBe(true);
+  });
+});
+
 // ===== ИТОГ =====
 
 console.log(`\n${'='.repeat(50)}`);
