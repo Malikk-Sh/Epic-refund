@@ -139,8 +139,16 @@ export class Room {
 
   #openAllDoors() {
     for (const door of this.doors) {
-      this.tilemap.setTile(door.tileCol, door.tileRow, TILE.DOOR_OPEN);
+      const gatedExit = this.gate && !this.isGateOpen &&
+        (!this.gate.exitDirection || this.gate.exitDirection === door.direction);
+      this.tilemap.setTile(door.tileCol, door.tileRow, gatedExit ? TILE.DOOR_CLOSED : TILE.DOOR_OPEN);
     }
+  }
+
+  openGate() {
+    if (!this.gate) return;
+    this.isGateOpen = true;
+    if (this.isCleared) this.#openAllDoors();
   }
 
   // Принудительное открытие (напр. если в комнате нет врагов сразу)
@@ -163,9 +171,10 @@ export class Room {
 
     const tile = this.tilemap.worldToTile(player.x, player.y);
     for (const door of this.doors) {
-      if (door.tileCol === tile.col && door.tileRow === tile.row) {
-        return door;
-      }
+      if (door.tileCol !== tile.col || door.tileRow !== tile.row) continue;
+      if (this.gate && !this.isGateOpen &&
+        (!this.gate.exitDirection || this.gate.exitDirection === door.direction)) return null;
+      return door;
     }
     return null;
   }

@@ -65,6 +65,20 @@ const { createLevel02 } = await import('../src/levels/Level02_Barracks.js');
 const { createLevel03 } = await import('../src/levels/Level03_Dungeons.js');
 const { createLevelByKey, hasLevel, getLevelKeys } = await import('../src/levels/LevelRegistry.js');
 const { Homunculus } = await import('../src/entities/enemies/bosses/Homunculus.js');
+const { InputManager } = await import('../src/core/InputManager.js');
+const { SaveManager } = await import('../src/core/SaveManager.js');
+const { HUD } = await import('../src/ui/HUD.js');
+const { AbilitySystem } = await import('../src/systems/AbilitySystem.js');
+const { drawHeroArt, drawEnemyArt, drawNpcArt } = await import('../src/render/ActorArt.js');
+const { DialogueSystem } = await import('../src/ui/DialogueSystem.js');
+const { GateUI } = await import('../src/ui/GateUI.js');
+const { Player } = await import('../src/entities/Player.js');
+const { Renderer } = await import('../src/core/Renderer.js');
+const { Camera } = await import('../src/core/Camera.js');
+const { Game } = await import('../src/core/Game.js');
+const { MobileFeedback } = await import('../src/ui/MobileFeedback.js');
+const { WorldRenderer } = await import('../src/render/WorldRenderer.js');
+const { chooseCombatTarget, blockedLine } = await import('../src/systems/CombatTargeting.js');
 
 function makeLevelSystems() {
   const bus = new EventBus();
@@ -807,6 +821,800 @@ describe('KaneDialogues', () => {
       const line = pickKaneLine('skillAttempt', 'all', p);
       expect(typeof line === 'string').toBe(true);
     }
+  });
+});
+
+
+describe('Mobile and checkpoint regressions', () => {
+  it('HUD рисуется с актуальным API дерева навыков', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const ctx = new Proxy({}, {
+      get(obj, key) { return obj[key] ?? (() => ({ width: 0 })); },
+      set(obj, key, value) { obj[key] = value; return true; },
+    });
+    const hud = new HUD({ ctx, logicalWidth: 768, logicalHeight: 432 }, null, tree, bus);
+    hud.draw(0.016, {
+      hp: 150, maxHP: 150,
+      mana: 100, maxMana: 100,
+      stamina: 100, maxStamina: 100,
+    });
+    expect(true).toBe(true);
+  });
+
+
+  it('закрытые Врата блокируют только выход вперёд', () => {
+    const systems = makeLevelSystems();
+    const level = createLevel01(systems);
+    const room = level.rooms.get('l1_room_04');
+    for (const enemy of room.enemies) {
+      enemy.isAlive = false;
+      enemy.hp = 0;
+    }
+    room.update(0.016, { x: 30, y: 30 }, systems.fearSystem, systems.skillTree, systems.eventBus);
+    const east = room.doors.find(d => d.direction === 'east');
+    const west = room.doors.find(d => d.direction === 'west');
+    expect(room.tilemap.getTile(east.tileCol, east.tileRow)).toBe(3);
+    expect(room.tilemap.getTile(west.tileCol, west.tileRow)).toBe(4);
+    expect(room.checkDoorTrigger(room.tilemap.tileToWorldCenter(east.tileCol, east.tileRow))).toBe(null);
+    const gate = new GateSystem(systems.eventBus, systems.skillTree);
+    systems.eventBus.on('gate:open', ({ gateId }) => {
+      if (gateId === room.gate.id) room.openGate();
+    });
+    expect(gate.approach(room.gate, 1)).toBe(true);
+    expect(gate.sacrifice('str_t4')).toBe(true);
+    expect(room.isGateOpen).toBe(true);
+    expect(room.checkDoorTrigger(room.tilemap.tileToWorldCenter(east.tileCol, east.tileRow)) !== null).toBe(true);
+  });
+
+  it('частичная жертва сохраняется при отмене', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const gate = new GateSystem(bus, tree);
+    const data = { id: 'major_resume', requirement: 'choice', size: 'major' };
+    gate.approach(data, 2);
+    gate.sacrifice('str_t4');
+    gate.cancel();
+    gate.approach(data, 2);
+    expect(gate.getSacrificesRemaining()).toBe(1);
+    expect(gate.serialize().major_resume).toContain('str_t4');
+  });
+
+  it('смерть босса отправляет событие ровно один раз', () => {
+    const bus = new EventBus();
+    const boss = new Homunculus(20, 20, bus);
+    let deaths = 0;
+    bus.on('boss:defeat', () => deaths++);
+    boss.takeDamage(10000, 0, 0);
+    boss.takeDamage(10000, 0, 0);
+    expect(deaths).toBe(1);
+  });
+
+  it('сенсорное действие попадает в обработчик игрового ввода', () => {
+    const previous = globalThis.window;
+    const listeners = new Map();
+    globalThis.window = {
+      addEventListener(name, fn) {
+        if (!listeners.has(name)) listeners.set(name, new Set());
+        listeners.get(name).add(fn);
+      },
+      removeEventListener(name, fn) { listeners.get(name)?.delete(fn); },
+    };
+    try {
+      const input = new InputManager();
+      input.pressVirtual('right');
+      input.pressVirtual('attackLight');
+      expect(input.getMovementVector().x).toBe(1);
+      expect(input.isPressed('attackLight')).toBe(true);
+      input.flush();
+      expect(input.isPressed('attackLight')).toBe(false);
+      input.releaseVirtual('right');
+      expect(input.getMovementVector().x).toBe(0);
+      input.destroy();
+      expect(listeners.get('keydown').size).toBe(0);
+    } finally {
+      globalThis.window = previous;
+    }
+  });
+
+  it('контрольный пункт сохраняется и восстанавливается', () => {
+    const previous = globalThis.localStorage;
+    const data = new Map();
+    globalThis.localStorage = {
+      setItem(k, v) { data.set(k, v); },
+      getItem(k) { return data.get(k) ?? null; },
+      removeItem(k) { data.delete(k); },
+    };
+    try {
+      const saves = new SaveManager();
+      expect(saves.autoSave({
+        version: '0.3.0',
+        currentLevelKey: 'level_02',
+        currentRoomId: 'l2_room_03',
+        gates: {},
+      })).toBe(true);
+      expect(saves.loadAuto().currentRoomId).toBe('l2_room_03');
+      saves.deleteSave('auto');
+      expect(saves.loadAuto()).toBe(null);
+    } finally {
+      globalThis.localStorage = previous;
+    }
+  });
+});
+
+
+// Реальные активные навыки — боевые эффекты, затраты, перезарядка и потеря.
+describe('Mobile assisted aiming and reliable skills', () => {
+  it('находит ближайшую цель и не пытается атаковать сквозь препятствие', () => {
+    const targets = [
+      {x:40,y:0,width:14,isAlive:true},
+      {x:0,y:26,width:14,isAlive:true},
+      {x:10,y:10,width:14,isAlive:false},
+    ];
+    const nearest = chooseCombatTarget(targets,0,0,1,0,100);
+    expect(nearest).toBe(targets[1]);
+    const visible = chooseCombatTarget(targets,0,0,1,0,100,
+      (x0,y0,x1,y1)=>x1===0);
+    expect(visible).toBe(targets[0]);
+    expect(blockedLine({isRectBlocked:(x)=>x>12 && x<24},0,0,50,0)).toBe(true);
+    expect(blockedLine({isRectBlocked:()=>false},0,0,50,0)).toBe(false);
+  });
+
+  it('на телефоне удар автоматически разворачивается к врагу сзади', () => {
+    const bus = new EventBus(), tree=new SkillTree(bus);
+    const player=new Player({eventBus:bus,skillTree:tree,
+      echoSystem:new EchoSystem(tree),combatSystem:new CombatSystem(bus)});
+    const attacks=[];
+    bus.on('player:attack',d=>attacks.push(d));
+    const input={
+      touchAssistEnabled:true,
+      isPressed:a=>a==='attackLight',
+      isHeld:()=>false,
+      getMovementVector:()=>({x:0,y:0}),
+    };
+    player.update(.016,input,null,[{x:-22,y:0,width:14,isAlive:true}]);
+    expect(attacks.length).toBe(1);
+    expect(attacks[0].dirX<0).toBe(true);
+    expect(player.aimTarget !== null).toBe(true);
+  });
+
+  it('с клавиатуры автоприцел не меняет направление удара', () => {
+    const bus = new EventBus(),tree=new SkillTree(bus);
+    const player=new Player({eventBus:bus,skillTree:tree,
+      echoSystem:new EchoSystem(tree),combatSystem:new CombatSystem(bus)});
+    const attacks=[];
+    bus.on('player:attack',d=>attacks.push(d));
+    player.update(.016,{
+      touchAssistEnabled:false,
+      isPressed:a=>a==='attackLight',isHeld:()=>false,
+      getMovementVector:()=>({x:0,y:0}),
+    },null,[{x:-22,y:0,width:14,isAlive:true}]);
+    expect(attacks[0].dirX).toBe(1);
+    expect(player.aimTarget).toBe(null);
+  });
+
+  it('магический снаряд смартфона наводится на цель сбоку', () => {
+    const bus=new EventBus(),tree=new SkillTree(bus);
+    const player={
+      x:0,y:0,width:14,height:14,facingX:1,facingY:0,
+      stamina:100,mana:100,isAlive:true,touchAimAssist:true,abilityInvulnerable:false,
+    };
+    const target={
+      x:0,y:85,width:14,isAlive:true,hp:200,
+      takeDamage(n){this.hp-=n;},
+    };
+    const room={enemies:[target],tilemap:{isRectBlocked:()=>false}};
+    const ability=new AbilitySystem({player,skillTree:tree,eventBus:bus,
+      camera:{shake(){}},getRoom:()=>room});
+    expect(ability.use('mag_t2')).toBe(true);
+    for(let i=0;i<15;i++)ability.update(.05);
+    expect(target.hp<200).toBe(true);
+    ability.destroy();
+  });
+
+  it('утрата ультимы сразу прекращает неуязвимость', () => {
+    const bus=new EventBus(),tree=new SkillTree(bus);
+    const player={x:0,y:0,facingX:1,facingY:0,stamina:100,mana:100,isAlive:true};
+    const ability=new AbilitySystem({player,skillTree:tree,eventBus:bus,
+      camera:{shake(){}},
+      getRoom:()=>({enemies:[],tilemap:{isRectBlocked:()=>false}})});
+    expect(ability.use('def_t4')).toBe(true);
+    expect(player.abilityInvulnerable).toBe(true);
+    tree.removeSkill('def_t4',1);
+    expect(player.abilityInvulnerable).toBe(false);
+    ability.destroy();
+  });
+
+  it('потеря чужого навыка не перезаряжает магический щит', () => {
+    const bus=new EventBus(),tree=new SkillTree(bus);
+    const player=new Player({eventBus:bus,skillTree:tree,
+      echoSystem:new EchoSystem(tree),combatSystem:new CombatSystem(bus)});
+    player.shieldCharges=1;
+    tree.removeSkill('str_t4',1);
+    expect(player.shieldCharges).toBe(1);
+    player.reviveFromCheckpoint({shieldCharges:0});
+    expect(player.shieldCharges).toBe(0);
+  });
+});
+
+describe('Optional mobile haptic feedback', () => {
+  it('не вибрирует без разрешения игрока, даже когда бой активен', () => {
+    const oldNav=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+    const oldDoc=Object.getOwnPropertyDescriptor(globalThis,'document');
+    const oldStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+    const calls=[], storage=new Map();
+    try {
+      Object.defineProperty(globalThis,'navigator',{configurable:true,
+        value:{vibrate:pattern=>{calls.push(pattern);return true;}}});
+      Object.defineProperty(globalThis,'document',{configurable:true,
+        value:{hidden:false}});
+      Object.defineProperty(globalThis,'localStorage',{configurable:true,
+        value:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)}});
+      const bus=new EventBus();
+      const feedback=new MobileFeedback(bus,{visible:true});
+      expect(feedback.supported).toBe(true);
+      expect(feedback.enabled).toBe(false);
+      bus.emit('combat:playerHit');
+      expect(calls.length).toBe(0);
+      feedback.setEnabled(true);
+      expect(storage.get('epic_refund_haptics')).toBe('true');
+      bus.emit('combat:playerHit');
+      expect(calls.length).toBe(1);
+      expect(Array.isArray(calls[0])).toBe(true);
+      feedback.setEnabled(false);
+      expect(calls.at(-1)).toBe(0);
+      feedback.destroy();
+    } finally {
+      if(oldNav) Object.defineProperty(globalThis,'navigator',oldNav);
+      else delete globalThis.navigator;
+      if(oldDoc) Object.defineProperty(globalThis,'document',oldDoc);
+      else delete globalThis.document;
+      if(oldStorage) Object.defineProperty(globalThis,'localStorage',oldStorage);
+      else delete globalThis.localStorage;
+    }
+  });
+
+  it('не создаёт побочных эффектов без navigator.vibrate', () => {
+    const bus=new EventBus();
+    const feedback=new MobileFeedback(bus,{visible:true});
+    if(!feedback.supported) {
+      feedback.setEnabled(true);
+      expect(feedback.enabled).toBe(false);
+      expect(feedback.pulse(18)).toBe(false);
+    }
+    feedback.destroy();
+  });
+});
+
+describe('Independent pause reasons on mobile', () => {
+  it('Настройки и скрытая вкладка не снимают друг у друга паузу', () => {
+    const game = new Game();
+    game.pause('settings');
+    game.pause('visibility');
+    expect(game.isPaused).toBe(true);
+    game.resume('visibility');
+    expect(game.isPaused).toBe(true);
+    expect(game.pauseReasons).toContain('settings');
+    game.resume('settings');
+    expect(game.isPaused).toBe(false);
+  });
+
+  it('Открытие другого модального окна не дублирует причину паузы', () => {
+    const game = new Game();
+    game.pause('settings');
+    game.pause('settings');
+    expect(game.pauseReasons.length).toBe(1);
+    game.resume('settings');
+    expect(game.isPaused).toBe(false);
+  });
+
+  it('Закрытие настроек в скрытой вкладке не возобновляет игру', () => {
+    const game = new Game();
+    game.pause('visibility');
+    game.pause('settings');
+    game.resume('settings');
+    expect(game.isPaused).toBe(true);
+    game.resume('visibility');
+    expect(game.isPaused).toBe(false);
+  });
+});
+
+describe('Smooth 30/60/120Hz camera', () => {
+  it('камера одинаково следует за целью при любом FPS', () => {
+    const simulate = fps => {
+      const camera = new Camera();
+      camera.setViewSize(768,432);
+      camera.setWorldBounds(0,0,2500,2500);
+      camera.snapTo({x:600,y:600});
+      camera.follow({x:850,y:700});
+      for(let i=0;i<fps;i++)camera.update(1/fps);
+      return { x: camera.x, y: camera.y };
+    };
+    const x30=simulate(30), x60=simulate(60), x120=simulate(120);
+    expect(Math.abs(x30.x-x60.x)<.01).toBe(true);
+    expect(Math.abs(x120.y-x60.y)<.01).toBe(true);
+  });
+
+  it('камера не сдвигается при нулевом dt', () => {
+    const camera = new Camera();
+    camera.setWorldBounds(0,0,2500,2500);
+    camera.snapTo({x:500,y:500});
+    camera.follow({x:900,y:900});
+    const oldX = camera.x;
+    camera.update(0);
+    expect(camera.x).toBe(oldX);
+  });
+});
+
+describe('Combat responsiveness and Retina mobile rendering', () => {
+  function fixture() {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const player = new Player({
+      skillTree: tree,
+      echoSystem: new EchoSystem(tree),
+      combatSystem: new CombatSystem(bus),
+      eventBus: bus,
+    });
+    const mock = (pressed = [], held = []) => ({
+      isPressed: action => pressed.includes(action),
+      isHeld: action => held.includes(action),
+      getMovementVector: () => ({ x: 0, y: 0 }),
+    });
+    return { bus, tree, player, mock };
+  }
+
+  it('первый удар сохраняет FSM attack и отображает анимацию', () => {
+    const { player, mock } = fixture();
+    player.update(.016, mock(['attackLight'], ['attackLight']), null);
+    expect(player.isInAttack).toBe(true);
+    player.update(.1, mock([], []), null);
+    expect(player.isInAttack).toBe(true);
+  });
+
+  it('короткое касание магии во время удара сработает по завершении анимации', () => {
+    const { player, mock, bus } = fixture();
+    const skills = [];
+    bus.on('player:skillUsed', d => skills.push(d.skillId));
+    player.update(.016, mock(['attackLight'], []));
+    player.update(.04, mock(['skill2'], []));
+    for (let i = 0; i < 7; i++) player.update(.05, mock([], []));
+    expect(skills).toContain('mag_t2');
+  });
+
+  it('удержание атаки повторяет удары с перезарядкой без спама', () => {
+    const { player, mock, bus } = fixture();
+    let count = 0;
+    bus.on('player:attack', () => count++);
+    player.update(.016, mock(['attackLight'], ['attackLight']));
+    for (let i = 0; i < 24; i++) player.update(.05, mock([], ['attackLight']));
+    expect(count > 1).toBe(true);
+    expect(count < 8).toBe(true);
+  });
+
+  it('сброс очереди запрещает случайный удар после закрытия модального окна', () => {
+    const { player, mock, bus } = fixture();
+    let casts = 0;
+    bus.on('player:skillUsed', () => casts++);
+    player.update(.016, mock(['attackLight'], []));
+    player.update(.02, mock(['skill1'], []));
+    player.clearBufferedAction();
+    for (let i = 0; i < 10; i++) player.update(.05, mock([], []));
+    expect(casts).toBe(0);
+  });
+
+  it('короткий свайп переката во время удара запускается после удара', () => {
+    const { player, mock } = fixture();
+    player.update(.016, mock(['attackLight'], []));
+    player.update(.05, mock(['roll'], []));
+    for (let i = 0; i < 7; i++) player.update(.05, mock([], []));
+    expect(player.state).toBe('roll');
+  });
+
+  it('Retina viewport выдаёт HiDPI buffer при той же CSS-геометрии', () => {
+    const original = globalThis.window;
+    const listeners = new Map();
+    let lastScale = 0;
+    globalThis.window = {
+      innerWidth: 844, innerHeight: 390, devicePixelRatio: 2,
+      addEventListener(n, fn) { listeners.set(n, fn); },
+      removeEventListener(n) { listeners.delete(n); },
+    };
+    const ctx = {
+      save(){},restore(){},
+      setTransform(a){lastScale=a;},
+      fillRect(){},
+    };
+    const canvas = { getContext: () => ctx, style: {} };
+    try {
+      const renderer = new Renderer(canvas);
+      const cssWidth = Number.parseInt(canvas.style.width, 10);
+      expect(canvas.width > cssWidth).toBe(true);
+      renderer.beginFrame(); renderer.endFrame();
+      expect(lastScale > renderer.scale).toBe(true);
+      renderer.setPixelDensityCap(1);
+      expect(canvas.width).toBe(cssWidth);
+      renderer.setPixelDensityCap(2);
+      expect(canvas.width > cssWidth).toBe(true);
+      expect(renderer.screenToLogical(422,195).x > 0).toBe(true);
+      renderer.destroy();
+      expect(listeners.size).toBe(0);
+    } finally {
+      globalThis.window = original;
+    }
+  });
+
+  it('портретный дисплей не вызывает DPR3-овершут памяти canvas', () => {
+    const original = globalThis.window;
+    globalThis.window = {
+      innerWidth: 390, innerHeight: 844, devicePixelRatio: 3,
+      addEventListener(){}, removeEventListener(){},
+    };
+    const canvas = { getContext: () => ({ imageSmoothingEnabled: false }), style: {} };
+    try {
+      const renderer = new Renderer(canvas);
+      expect(renderer.pixelRatio).toBe(2);
+      expect(canvas.width).toBe(780);
+      expect(canvas.height < 600).toBe(true);
+      renderer.destroy();
+    } finally {
+      globalThis.window = original;
+    }
+  });
+});
+
+describe('Safe mobile Gate sacrifice', () => {
+  it('первое подтверждение не удаляет навык, второе выполняет жертву', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const gates = new GateSystem(bus, tree);
+    const ui = new GateUI({}, gates, bus);
+    expect(gates.approach({ id: 'safe_mobile', requirement: 'choice', size: 'minor' }, 1)).toBe(true);
+    ui.show();
+    const confirm = { isPressed: action => action === 'interact' };
+    ui.update(.016, confirm);
+    expect(tree.getActiveSkillCount()).toBe(20);
+    expect(ui.visible).toBe(true);
+    ui.update(.016, confirm);
+    expect(tree.getActiveSkillCount()).toBe(19);
+    expect(ui.visible).toBe(false);
+  });
+
+  it('смена выбора отменяет предварительное подтверждение', () => {
+    const bus = new EventBus();
+    const tree = new SkillTree(bus);
+    const gates = new GateSystem(bus, tree);
+    gates.approach({ id: 'safe_switch', requirement: 'choice', size: 'minor' }, 1);
+    const ui = new GateUI({}, gates, bus);
+    ui.show();
+    const pressed = action => ({ isPressed: a => a === action });
+    ui.update(.016, pressed('interact'));
+    ui.update(.016, pressed('down'));
+    ui.update(.016, pressed('interact'));
+    expect(tree.getActiveSkillCount()).toBe(20);
+    ui.update(.016, pressed('interact'));
+    expect(tree.getActiveSkillCount()).toBe(19);
+  });
+
+  it('длинный список прокручивается до выбранной строки', () => {
+    const names = [];
+    const ctx = new Proxy({}, {
+      get(obj, key) {
+        if (key === 'measureText') return str => ({ width: String(str).length * 6 });
+        if (key === 'fillText') return str => names.push(str);
+        return obj[key] ?? (() => {});
+      },
+      set(obj, key, value) { obj[key] = value; return true; },
+    });
+    const bus = new EventBus();
+    const fake = {
+      isActive: () => true,
+      getRemovableForCurrentGate: () => Array.from({ length: 9 },
+        (_, i) => ({ id: 's' + i, name: 'Способность ' + i, branch: 'magic',
+          echo: { description: 'Отголосок' } })),
+      getActiveGate: () => ({}),
+      getSacrificesRemaining: () => 1,
+    };
+    const ui = new GateUI({ ctx, logicalWidth: 768, logicalHeight: 432 }, fake, bus);
+    ui.show();
+    for (let i = 0; i < 8; i++) ui.update(.016, {isPressed: a => a === 'down'});
+    ui.draw();
+    expect(names).toContain('Способность 8');
+    expect(names).toContain('9 / 9');
+  });
+});
+
+describe('Mobile dialogue UI', () => {
+  it('сообщает сенсорному слою начало и конец монолога', () => {
+    const bus = new EventBus();
+    const visible = [];
+    bus.on('ui:dialogue', state => visible.push(state.visible));
+    const dialogue = new DialogueSystem({}, bus);
+    dialogue.show('Кейн', 'Воспоминание', 4);
+    expect(visible[0]).toBe(true);
+    dialogue.hide();
+    expect(visible[1]).toBe(false);
+  });
+
+  it('поднимает текст диалога над экранной зоной сенсорных кнопок', () => {
+    const old = globalThis.document;
+    const rects = [];
+    const ctx = new Proxy({}, {
+      get(obj, k) {
+        if (k === 'fillRect') return (x,y,w,h) => rects.push({x,y,w,h});
+        if (k === 'measureText') return t => ({ width: String(t).length * 7 });
+        return obj[k] ?? (() => {});
+      },
+      set(obj,k,v){obj[k]=v; return true;},
+    });
+    try {
+      globalThis.document = {body:{classList:{contains: n => n === 'touch-active'}}};
+      const bus = new EventBus();
+      const dialogue = new DialogueSystem({ ctx, logicalWidth: 768, logicalHeight: 432 }, bus);
+      dialogue.show('Кейн', 'Прошлое не вернуть.');
+      dialogue.draw();
+      expect(rects.length > 0).toBe(true);
+      expect(rects[0].y + rects[0].h < 330).toBe(true);
+      dialogue.hide();
+    } finally {
+      globalThis.document = old;
+    }
+  });
+});
+
+describe('Mobile visibility during invulnerability', () => {
+  it('герой остаётся видимым на нечётной фазе мерцания i-frames', () => {
+    const shapes=[];
+    const ctx=new Proxy({},{
+      get(obj,key) {
+        if(key==='fillRect') return (...v)=>shapes.push(v);
+        return obj[key] ?? (()=>{});
+      },
+      set(obj,key,v){obj[key]=v;return true;},
+    });
+    const renderer={ctx},camera={
+      x:0,y:0,visibleWorldWidth:100,visibleWorldHeight:100,zoom:2,
+      worldToScreen:(x,y)=>({x,y}),
+    };
+    const world=new WorldRenderer(renderer,camera,{has:()=>false});
+    const player={
+      x:20,y:20,width:14,height:14,isInvulnerable:true,
+      iFrameTimer:.05,isInAttack:false,isParrying:false,
+      state:'idle',phase:'god',facingX:1,facingY:0,
+      touchAimAssist:false,
+    };
+    const room={
+      id:'l1_room_01',
+      tilemap:{tileSize:24,cols:0,rows:0},
+      getAllEntities:()=>[],
+    };
+    world.drawRoom(room,player);
+    expect(shapes.length>12).toBe(true);
+  });
+});
+
+describe('Procedural pixel art and compact HUD', () => {
+  function canvas() {
+    const events = [];
+    const ctx = new Proxy({}, {
+      get(obj, key) {
+        if (key === 'fillRect') return (x, y, w, h) => events.push({ x, y, w, h });
+        if (key === 'measureText') return text => ({ width: String(text).length * 8 });
+        return obj[key] ?? (() => {});
+      },
+      set(obj, key, value) { obj[key] = value; return true; },
+    });
+    return { ctx, events };
+  }
+
+  it('Кейн прорисован пиксельными фигурами вместо пустого прямоугольника', () => {
+    const { ctx, events } = canvas();
+    drawHeroArt(ctx, { state: 'move', phase: 'god', facingX: 1, facingY: 0,
+      isInAttack: true, isParrying: false }, 100, 100, 2, 0.5);
+    expect(events.length > 18).toBe(true);
+    expect(events.some(item => item.w <= 2)).toBe(true);
+  });
+
+  it('у скелета, слизи, гоблина и босса разные процедурные силуэты', () => {
+    for (const typeName of ['slime', 'skeleton', 'goblin', 'homunculus']) {
+      const { ctx, events } = canvas();
+      drawEnemyArt(ctx, { typeName, width: 14, height: 14, x: 8,
+        y: 8, isBoss: typeName === 'homunculus', hitFlash: 0, state: 'idle' },
+      50, 50, 2, 0);
+      expect(events.length > 5).toBe(true);
+    }
+  });
+
+  it('NPC имеет отдельную фигуру, не совпадающую с героем', () => {
+    const { ctx, events } = canvas();
+    drawNpcArt(ctx, {}, 50, 50, 2, 0);
+    expect(events.length > 5).toBe(true);
+  });
+
+  it('панель навыков больше не закрывает нижнюю часть арены', () => {
+    const { ctx, events } = canvas();
+    const bus = new EventBus();
+    const skillTree = new SkillTree(bus);
+    const hud = new HUD({ ctx, logicalWidth: 768, logicalHeight: 432 },
+      null, skillTree, bus);
+    hud.draw(0.016, { hp: 150, maxHP: 150, mana: 100, maxMana: 100,
+      stamina: 100, maxStamina: 100 });
+    const centerBottom = events.some(rect => rect.x > 150 && rect.x < 610 &&
+      rect.y > 280 && rect.w > 6);
+    expect(centerBottom).toBe(false);
+  });
+});
+
+describe('Active abilities: mobile + keyboard', () => {
+  function fixture() {
+    const eventBus = new EventBus();
+    const skillTree = new SkillTree(eventBus);
+    const player = {
+      x: 0, y: 0, width: 14, height: 14, facingX: 1, facingY: 0,
+      hp: 100, stamina: 100, mana: 100, isAlive: true,
+      isStealthed: false, abilityInvulnerable: false,
+    };
+    const enemy = {
+      x: 68, y: 0, width: 14, hp: 1000, isAlive: true, typeName: 'dummy',
+      takeDamage(n) { this.hp = Math.max(0, this.hp - n); if (this.hp === 0) this.isAlive = false; },
+    };
+    const room = { enemies: [enemy], tilemap: { isRectBlocked: () => false } };
+    const abilities = new AbilitySystem({
+      eventBus, skillTree, player, getRoom: () => room,
+      camera: { shake() {} },
+    });
+    return { eventBus, skillTree, player, enemy, room, abilities };
+  }
+
+  it('вихрь поражает врага, тратит выносливость и уходит на перезарядку', () => {
+    const f = fixture();
+    expect(f.abilities.use('str_t3')).toBe(true);
+    expect(f.player.stamina).toBe(50);
+    for (let i = 0; i < 10; i++) f.abilities.update(.05);
+    expect(f.enemy.hp < 1000).toBe(true);
+    expect(f.abilities.use('str_t3')).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('огненный шар летит, наносит урон и расходует ману', () => {
+    const f = fixture();
+    expect(f.abilities.use('mag_t2')).toBe(true);
+    expect(f.player.mana).toBe(80);
+    for (let i = 0; i < 10; i++) f.abilities.update(.05);
+    expect(f.enemy.hp < 1000).toBe(true);
+    expect(f.abilities.use('mag_t2')).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('магия не работает при нехватке маны', () => {
+    const f = fixture();
+    f.player.mana = 0;
+    expect(f.abilities.use('mag_t2')).toBe(false);
+    expect(f.enemy.hp).toBe(1000);
+    f.abilities.destroy();
+  });
+
+  it('скрытность режет скорость обнаружения и усиливает первый удар', () => {
+    const f = fixture();
+    expect(f.abilities.use('agi_t3')).toBe(true);
+    expect(f.player.isStealthed).toBe(true);
+    f.abilities.update(.05);
+    expect(f.player.stamina < 100).toBe(true);
+    const attack = { damage: 10 };
+    f.eventBus.emit('player:attack', attack);
+    expect(attack.damage).toBe(30);
+    expect(f.player.isStealthed).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('телепорт перемещает героя, взрывает область и тратит выносливость', () => {
+    const f = fixture();
+    f.enemy.x = 250;
+    expect(f.abilities.use('agi_t4')).toBe(true);
+    expect(f.player.x).toBe(250);
+    expect(f.player.stamina).toBe(65);
+    expect(f.enemy.hp < 1000).toBe(true);
+    f.abilities.destroy();
+  });
+
+  it('отмена телепорта внутри сплошной стены не тратит ресурс', () => {
+    const f = fixture();
+    f.room.tilemap.isRectBlocked = () => true;
+    expect(f.abilities.use('agi_t4')).toBe(false);
+    expect(f.player.stamina).toBe(100);
+    f.abilities.destroy();
+  });
+
+  it('неуязвимость действует ограниченное время', () => {
+    const f = fixture();
+    expect(f.abilities.use('def_t4')).toBe(true);
+    expect(f.player.abilityInvulnerable).toBe(true);
+    for (let i = 0; i < 180; i++) f.abilities.update(.05);
+    expect(f.player.abilityInvulnerable).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('утрата навыка блокирует использование и прерывает скрытность', () => {
+    const f = fixture();
+    f.abilities.use('agi_t3');
+    f.skillTree.removeSkill('agi_t3', 1);
+    expect(f.player.isStealthed).toBe(false);
+    expect(f.abilities.use('agi_t3')).toBe(false);
+    f.abilities.destroy();
+  });
+
+  it('корректно уведомляет экранные кнопки о cooldown', () => {
+    const f = fixture();
+    let slots = null;
+    const off = f.eventBus.on('ability:status', d => { slots = d.slots; });
+    f.abilities.use('mag_t2');
+    expect(slots.find(s => s.action === 'skill2').cooldown).toBe(3);
+    expect(slots.find(s => s.action === 'skill2').available).toBe(true);
+    off();
+    f.abilities.destroy();
+  });
+
+  it('очищает эффекты при выходе со сцены', () => {
+    const f = fixture();
+    f.abilities.use('str_t4');
+    expect(f.player.abilityInvulnerable).toBe(true);
+    f.abilities.reset();
+    expect(f.player.abilityInvulnerable).toBe(false);
+    f.abilities.destroy();
+  });
+});
+
+describe('Hexed Prison / first playable rooms', () => {
+  it('3/4 камера сохраняет обратимое преобразование координат', () => {
+    const cam=new Camera();
+    cam.setViewSize(768,432);
+    cam.setWorldBounds(0,0,2000,2000);
+    cam.snapTo({x:640,y:640});
+    const p=cam.worldToScreen(120,144);
+    const back=cam.screenToWorld(p.x,p.y);
+    expect(Math.abs(back.x-120)<.000001).toBe(true);
+    expect(Math.abs(back.y-144)<.000001).toBe(true);
+    expect(cam.pitch).toBe(.84);
+    expect(cam.visibleWorldHeight>216).toBe(true);
+    const a=cam.worldToScreen(300,300),b=cam.worldToScreen(324,324);
+    expect(Math.abs((b.y-a.y)/(b.x-a.x)-.84)<.000001).toBe(true);
+  });
+
+  it('не принимает невалидный pitch и позволяет вернуться к прямой проекции', () => {
+    const cam=new Camera();
+    toThrow(()=>cam.setPitch(.2));
+    cam.setPitch(1);
+    expect(cam.pitch).toBe(1);
+  });
+
+  it('Entry Hall содержит четыре физические колонны, южный спавн и северный проход', () => {
+    const level=createLevel01(makeLevelSystems());
+    const r=level.rooms.get('l1_room_01');
+    expect(level.name.includes('Hexed Prison')).toBe(true);
+    expect(r.presentation.title.includes('ENTRY HALL')).toBe(true);
+    expect(r.presentation.props.filter(p=>p.type==='pillar').length).toBe(4);
+    expect(r.doors.some(d=>d.direction==='north'&&d.toRoomId==='l1_room_02')).toBe(true);
+    expect(r.doors.some(d=>d.direction==='east')).toBe(false);
+    expect(r.tilemap.getTile(4,3)).toBe(2);
+    expect(r.tilemap.getTile(7,5)).toBe(1);
+    expect(r.tilemap.worldToTile(r.spawnPoints.default.x,r.spawnPoints.default.y).row).toBe(7);
+  });
+
+  it('Cell Block доступен с юга, блокирует ниши и открывает восточный выход после победы', () => {
+    const level=createLevel01(makeLevelSystems());
+    const r=level.rooms.get('l1_room_02');
+    expect(r.presentation.title.includes('CELL BLOCK')).toBe(true);
+    expect(r.presentation.props.filter(p=>p.type==='bars').length).toBe(4);
+    expect(r.doors.some(d=>d.direction==='south'&&d.toRoomId==='l1_room_01')).toBe(true);
+    expect(r.doors.some(d=>d.direction==='west')).toBe(false);
+    expect(r.tilemap.getTile(3,3)).toBe(2);
+    const spawn=r.getSpawnPosition('south');
+    const t=r.tilemap.worldToTile(spawn.x,spawn.y);
+    expect(r.tilemap.getTile(t.col,t.row)).toBe(1);
+    r.enemies.forEach(e=>{e.isAlive=false;});
+    r.update(.016,{x:spawn.x,y:spawn.y},makeLevelSystems().fearSystem,makeLevelSystems().skillTree,makeLevelSystems().eventBus);
+    expect(r.isCleared).toBe(true);
+    expect(r.doors.some(d=>d.direction==='east')).toBe(true);
   });
 });
 

@@ -49,19 +49,50 @@ function makeRoom(doorDirs = []) {
 }
 
 export function createLevel01(systems) {
-  const level = new Level(1, 'Гнилой Пик', systems);
+  const level = new Level(1, 'Hexed Prison — Проклятая тюрьма', systems);
 
-  // === 1-1: Лагерь (старт, без врагов) ===
-  const r01map = makeRoom(['east']);
-  // Точка спавна слева
-  r01map[5][2] = 7;
-  // Костёр-препятствие по центру для атмосферы
-  r01map[5][7] = 2;
+  // === 1-1: Hexed Prison / Entry Hall (стартовый зал) ===
+  // Игрок появляется у южных ступеней. Выход на север через решётку.
+  // 4 опорные колонны — реальные препятствия, центральная ось свободна.
+  const r01map = makeRoom(['north']);
+  r01map[7][7] = 7;
+  for (const [c,r] of [[4,3],[10,3],[4,6],[10,6],[2,2],[12,7]])
+    r01map[r][c] = 2;
   const room01 = new Room('l1_room_01', r01map, TS);
+  room01.presentation = {
+    biome: 'hexed_prison', title: 'HEXED PRISON · ENTRY HALL',
+    props: [
+      {type:'doorArch',col:7,row:1},
+      {type:'gargoyle',col:2,row:2},
+      {type:'pillar',col:4,row:3},{type:'pillar',col:10,row:3},
+      {type:'pillar',col:4,row:6},{type:'pillar',col:10,row:6},
+      {type:'torch',col:3,row:1},{type:'torch',col:11,row:1},
+      {type:'brazier',col:3,row:5},{type:'brazier',col:11,row:5},
+      {type:'candles',col:1,row:7},{type:'candles',col:13,row:2},
+      {type:'crate',col:12,row:7},
+      {type:'grate',col:2,row:7},{type:'grate',col:12,row:3},
+      {type:'stain',col:8,row:5},
+    ],
+  };
 
-  // === 1-2: Горная тропа — первый враг ===
-  const r02map = makeRoom(['west', 'east']);
+  // === 1-2: Cell Block — первое столкновение в блоке камер ===
+  // Южная дверь ведёт обратно в Entry Hall. Восточная — в старый маршрут
+  // уровня, который будет переосмыслен в следующем этапе.
+  const r02map = makeRoom(['south', 'east']);
+  for (const [c,r] of [[3,3],[11,3],[3,6],[11,6]]) r02map[r][c] = 2;
   const room02 = new Room('l1_room_02', r02map, TS);
+  room02.presentation = {
+    biome: 'hexed_prison', title: 'HEXED PRISON · CELL BLOCK',
+    props: [
+      {type:'bars',col:2,row:3},{type:'bars',col:12,row:3},
+      {type:'bars',col:2,row:6},{type:'bars',col:12,row:6},
+      {type:'pillar',col:3,row:3},{type:'pillar',col:11,row:3},
+      {type:'pillar',col:3,row:6},{type:'pillar',col:11,row:6},
+      {type:'torch',col:4,row:1},{type:'torch',col:10,row:1},
+      {type:'candles',col:2,row:7},{type:'candles',col:12,row:7},
+      {type:'grate',col:7,row:3},{type:'stain',col:6,row:5},
+    ],
+  };
   const s1 = room02.tilemap.tileToWorldCenter(8, 5);
   room02.addEnemy(new Slime(s1.x, s1.y));
 
@@ -85,6 +116,7 @@ export function createLevel01(systems) {
   const gatePos = room04.tilemap.tileToWorldCenter(7, 5);
   room04.setGate({
     id: 'gate_1_1',
+    exitDirection: 'east',
     requirement: GATE_REQUIREMENTS.CHOICE,
     size: GATE_SIZES.MINOR,
     label: 'Врата Прозрения',
@@ -107,11 +139,11 @@ export function createLevel01(systems) {
   room06.addEnemy(new Homunculus(bossPos.x, bossPos.y, systems.eventBus));
 
   // === Связи между комнатами ===
-  room01.setNeighbor('east', 'l1_room_02');
-  room01.addDoor('east', 'l1_room_02');
+  room01.setNeighbor('north', 'l1_room_02');
+  room01.addDoor('north', 'l1_room_02');
 
-  room02.setNeighbor('west', 'l1_room_01');
-  room02.addDoor('west', 'l1_room_01');
+  room02.setNeighbor('south', 'l1_room_01');
+  room02.addDoor('south', 'l1_room_01');
   room02.setNeighbor('east', 'l1_room_03');
   room02.addDoor('east', 'l1_room_03');
 
@@ -151,7 +183,7 @@ export function createLevel01(systems) {
 
   level.minimapLayout = {
     l1_room_01: { col: 0, row: 0 },
-    l1_room_02: { col: 1, row: 0 },
+    l1_room_02: { col: 0, row: -1 },
     l1_room_03: { col: 2, row: 0 },
     l1_room_04: { col: 3, row: 0 },
     l1_room_05: { col: 4, row: 0 },

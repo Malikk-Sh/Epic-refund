@@ -46,6 +46,8 @@ export class DialogueSystem {
     this.#choiceMode = false;
     this.#choices    = [];
     this.#active     = true;
+    this.#eventBus.emit('ui:dialogue', { visible: true });
+    this.#eventBus.emit('ui:choices', { visible: false });
     this.#fullText   = text ?? '';
     this.#currentText = '';
     this.#speaker    = speaker;
@@ -59,6 +61,7 @@ export class DialogueSystem {
     this.#runner     = runner;
     this.#speaker    = speaker;
     this.#active     = true;
+    this.#eventBus.emit('ui:dialogue', { visible: true });
     this.#choiceMode = false;
     this.#choices    = [];
     this.#advanceRunner();
@@ -67,6 +70,7 @@ export class DialogueSystem {
   // Читает следующий шаг из runner и обновляет состояние.
   #advanceRunner() {
     const step = this.#runner.peek();
+    this.#eventBus.emit('ui:choices', { visible: step.type === 'choices' });
 
     if (step.type === 'line') {
       this.#fullText    = step.text;
@@ -94,6 +98,8 @@ export class DialogueSystem {
     this.#runner     = null;
     this.#choiceMode = false;
     this.#choices    = [];
+    this.#eventBus.emit('ui:choices', { visible: false });
+    this.#eventBus.emit('ui:dialogue', { visible: false });
     this.#eventBus.emit('npc:dialogueEnd', {});
   }
 
@@ -154,9 +160,13 @@ export class DialogueSystem {
       : 0;
     const BOX_H = BOX_HEIGHT + extraH;
 
-    const boxX = BOX_MARGIN;
-    const boxY = H - BOX_H - BOX_MARGIN;
-    const boxW = W - BOX_MARGIN * 2;
+    // На мобильном кнопки действий живут в нижней безопасной зоне.
+    // Не накрывать ими реплики и варианты выбора.
+    const touch = typeof document !== 'undefined' &&
+      document.body?.classList.contains('touch-active');
+    const boxX = touch ? 38 : BOX_MARGIN;
+    const boxY = H - BOX_H - (touch ? 116 : BOX_MARGIN);
+    const boxW = W - boxX * 2;
 
     // Фон
     ctx.fillStyle = 'rgba(10, 8, 5, 0.92)';

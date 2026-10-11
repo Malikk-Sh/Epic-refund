@@ -2,6 +2,8 @@
 // Использует SpriteRegistry: если спрайт зарегистрирован — рисует его, иначе — плейсхолдер.
 
 import { TILE } from '../levels/Tilemap.js';
+import { drawHeroArt, drawEnemyArt, drawNpcArt } from './ActorArt.js';
+import { drawPrisonFloor, drawPrisonProp, prisonTallProps } from './PrisonRoomArt.js';
 
 // Цвета тайлов (для плейсхолдеров)
 const TILE_COLORS = {
@@ -37,30 +39,76 @@ export class WorldRenderer {
     const tm = room.tilemap;
 
     // 1. Тайлмап
-    this.#drawTilemap(ctx, tm, cam);
+    this.#drawTilemap(ctx, tm, cam, room.id);
+
+    // Декали рисуем ПОД персонажами: они не должны выглядеть препятствиями.
+    if (room.presentation?.biome === 'hexed_prison')
+      drawPrisonFloor(ctx, room, cam);
 
     // 2. Врата Забвения (если есть) — под сущностями
     if (room.gate) {
       this.#drawGate(ctx, room.gate, cam);
     }
 
-    // 3. Сущности — сортируем по Y для правильного порядка отрисовки
-    const entities = [...room.getAllEntities(), player].sort((a, b) => a.y - b.y);
-    for (const entity of entities) {
-      if (entity === player) {
-        this.#drawPlayer(ctx, entity, cam);
-      } else if (entity.typeName && entity.hp !== undefined) {
-        this.#drawEnemy(ctx, entity, cam);
+    // Персонажи и высокие декорации сортируются по НОГАМ/основанию, а не
+    // по высоте картинки: проходя за колонной, герой корректно скрывается.
+    const props = room.presentation?.biome === 'hexed_prison' ? prisonTallProps(room) : [];
+    const items = [
+      ...room.getAllEntities().map(entity => ({ entity, y: entity.y })),
+      { entity: player, y: player.y },
+      ...props.map(prop => ({ prop, y: (prop.row + .78) * tm.tileSize })),
+    ].sort((a, b) => a.y - b.y);
+    for (const item of items) {
+      if (item.prop) {
+        drawPrisonProp(ctx, item.prop, tm, cam, performance.now() / 1000);
+      } else if (item.entity === player) {
+        this.#drawPlayer(ctx, item.entity, cam);
+      } else if (item.entity.typeName && item.entity.hp !== undefined) {
+        this.#drawEnemy(ctx, item.entity, cam);
       } else {
-        this.#drawNPC(ctx, entity, cam);
+        this.#drawNPC(ctx, item.entity, cam);
       }
+    }
+
+    // Маленький ненавязчивый ромб показывает, куда попадёт касание атаки.
+    // Для клавиатуры / мыши автоприцел не включается.
+    if (player.touchAimAssist && player.aimTarget?.isAlive) {
+      const { x, y } = cam.worldToScreen(player.aimTarget.x, player.aimTarget.y);
+      const r = Math.max(13, player.aimTarget.width * cam.zoom * .5 + 5);
+      ctx.save();
+      ctx.strokeStyle = '#e8d38b';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, y - r); ctx.lineTo(x + 5, y - r + 4);
+      ctx.moveTo(x + r, y); ctx.lineTo(x + r - 4, y + 5);
+      ctx.moveTo(x, y + r); ctx.lineTo(x - 5, y + r - 4);
+      ctx.moveTo(x - r, y); ctx.lineTo(x - r + 4, y - 5);
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
   // === ТАЙЛМАП ===
 
-  #drawTilemap(ctx, tm, cam) {
+  #drawTilemap(ctx, tm, cam, roomId) {
     const ts = tm.tileSize;
+    // Каждая локация имеет своё окружение: гниль, укреплённый камень, катакомбы.
+    const biome = roomId === 'l1_room_01' || roomId === 'l1_room_02' ? 'prison' :
+      roomId?.startsWith('l3') ? 'catacomb' :
+      roomId?.startsWith('l2') ? 'barracks' : 'peak';
+    const tint = biome === 'prison' ? {
+      floor: '#423535', shade: '#3f3435', wall: '#37333a', edge: '#877064',
+      debris: '#b17d59', crack: '#231f27',
+    } : biome === 'peak' ? {
+      floor: '#283029', shade: '#222b25', wall: '#3c493d', edge: '#637466',
+      debris: '#5a7653', crack: '#161e1b',
+    } : biome === 'barracks' ? {
+      floor: '#343039', shade: '#2b2833', wall: '#4c4553', edge: '#786c7d',
+      debris: '#82726c', crack: '#231e2b',
+    } : {
+      floor: '#2c242e', shade: '#27202b', wall: '#463342', edge: '#735563',
+      debris: '#7c5367', crack: '#1b1622',
+    };
 
     // Определяем видимый диапазон тайлов (culling с учётом zoom)
     const startCol = Math.max(0, Math.floor(cam.x / ts));
@@ -77,26 +125,62 @@ export class WorldRenderer {
 
         // Размер тайла в экранных пикселях с учётом zoom
         const sw = ts * cam.zoom;
-        const sh = ts * cam.zoom;
+        const sh = ts * cam.zoom * cam.pitch;
 
-        const color = TILE_COLORS[t] ?? '#000';
+        // Плавная неоднородная кладка вместо шахматного узора на новом биоме.
+        const seed = ((c * 73856093) ^ (r * 19349663)) >>> 0;
+        const floor = t === TILE.FLOOR || t === TILE.SPAWN;
+        const floorColor = biome === 'prison'
+          ? (seed % 7 < 2 ? tint.shade : tint.floor)
+          : (((c + r) & 1) ? tint.floor : tint.shade);
+        const color = floor ? floorColor :
+          (t === TILE.WALL ? tint.wall : TILE_COLORS[t] ?? '#000');
         ctx.fillStyle = color;
-        ctx.fillRect(screen.x, screen.y, sw, sh);
-
-        // Сетка пола (вариация для читаемости)
-        if (t === TILE.FLOOR && (c + r) % 2 === 0) {
-          ctx.fillStyle = FLOOR_VAR_COLOR;
-          ctx.fillRect(screen.x, screen.y, sw, sh);
+        ctx.fillRect(screen.x, screen.y, sw + .2, sh + .2);
+        if (floor) {
+          const edge = Math.max(1, Math.round(cam.zoom));
+          if (biome === 'prison') {
+            // Тонкая расшивка плит и сколы, не конкурирующие с силуэтом игрока.
+            ctx.fillStyle = '#2c2529';
+            ctx.fillRect(screen.x, screen.y + sh - Math.max(1,cam.zoom*.55),
+              sw, Math.max(1,cam.zoom*.55));
+            if ((r+c) % 3 === 0)
+              ctx.fillRect(screen.x + sw*.18, screen.y + sh*.13,
+                Math.max(1,cam.zoom*.55), sh*.23);
+            ctx.fillStyle = 'rgba(181,122,78,.10)';
+            ctx.fillRect(screen.x + sw*.06, screen.y + sh*.10, sw*.72, Math.max(1,cam.zoom*.5));
+          }
+          ctx.fillStyle = tint.crack;
+          if ((seed % 6) === 0) {
+            ctx.fillRect(screen.x + sw * .18, screen.y + sh * .36,
+              sw * .28, edge);
+            ctx.fillRect(screen.x + sw * .45, screen.y + sh * .36,
+              edge, sh * .23);
+          }
+          if ((seed % 5) === 0) {
+            ctx.fillStyle = tint.debris;
+            ctx.globalAlpha = .42;
+            ctx.fillRect(screen.x + sw * .73, screen.y + sh * .2,
+              edge * 2, edge);
+            ctx.fillRect(screen.x + sw * .58, screen.y + sh * .63,
+              edge, edge);
+            ctx.globalAlpha = 1;
+          }
         }
 
         // Детализация стен
         if (t === TILE.WALL) {
           // Верхний хайлайт
-          ctx.fillStyle = '#5c4a35';
-          ctx.fillRect(screen.x, screen.y, sw, 3);
-          // Нижняя тень
-          ctx.fillStyle = '#2e2215';
-          ctx.fillRect(screen.x, screen.y + sh - 3, sw, 3);
+          ctx.fillStyle = tint.edge;
+          ctx.fillRect(screen.x, screen.y, sw, Math.max(2, cam.zoom * 2));
+          // Вертикальные кладочные швы создают глубину, но не мешают навигации.
+          ctx.fillStyle = tint.crack;
+          ctx.fillRect(screen.x + sw * ((seed % 2) ? .32 : .72),
+            screen.y + sh * .18, Math.max(1, cam.zoom), sh * .56);
+          ctx.fillRect(screen.x + sw * .1, screen.y + sh * .69,
+            sw * .8, Math.max(1, cam.zoom));
+          ctx.fillStyle = 'rgba(6,7,12,.55)';
+          ctx.fillRect(screen.x, screen.y + sh - cam.zoom * 3, sw, cam.zoom * 3);
         }
 
         // Детализация двери
@@ -107,6 +191,10 @@ export class WorldRenderer {
           // Ручка
           ctx.fillStyle = '#d8b868';
           ctx.fillRect(screen.x + sw / 2 - 2, screen.y + sh / 2 - 2, 4, 4);
+          // Мотив стянутых металлических полос (чётко закрыт проход).
+          ctx.fillStyle = '#241b23';
+          ctx.fillRect(screen.x + sw * .2, screen.y + sh * .15, cam.zoom, sh * .7);
+          ctx.fillRect(screen.x + sw * .8, screen.y + sh * .15, cam.zoom, sh * .7);
         }
 
         if (t === TILE.DOOR_OPEN) {
@@ -175,7 +263,10 @@ export class WorldRenderer {
     const visible = player.isInvulnerable ?
       (Math.floor(player.iFrameTimer * 30) % 2 === 0) : true;
 
-    if (!visible) return;
+    // Не скрывать Кейна целиком во время i-frames: на маленьком дисплее
+    // потеря силуэта делает позицию персонажа нечитаемой.
+    ctx.save();
+    if (!visible) ctx.globalAlpha *= 0.5;
 
     // Цвет зависит от фазы
     const phaseColors = {
@@ -193,12 +284,7 @@ export class WorldRenderer {
         flipX: player.facingX < 0,
       });
     } else {
-      this.#drawPlaceholder(ctx, player, screen.x, screen.y, color, 'Кейн', {
-        strokeColor: '#000',
-        facingX: player.facingX,
-        facingY: player.facingY,
-        labelColor: color,
-      });
+      drawHeroArt(ctx, player, screen.x, screen.y, cam.zoom, performance.now() / 1000);
     }
 
     // Если атакует — визуализируем дугу атаки
@@ -214,6 +300,7 @@ export class WorldRenderer {
       ctx.arc(screen.x, screen.y, 12, 0, Math.PI * 2);
       ctx.stroke();
     }
+    ctx.restore();
   }
 
   #drawAttackArc(ctx, player, cam) {
@@ -256,12 +343,7 @@ export class WorldRenderer {
         tint: enemy.hitFlash > 0 ? 'rgba(255,100,100,0.6)' : null,
       });
     } else {
-      this.#drawPlaceholder(ctx, enemy, screen.x, screen.y, color, enemy.displayName, {
-        strokeColor: '#000',
-        facingX: enemy.facingX,
-        facingY: enemy.facingY,
-        labelColor: enemy.state === 'flee' ? '#ffcc44' : '#fff',
-      });
+      drawEnemyArt(ctx, enemy, screen.x, screen.y, cam.zoom, performance.now() / 1000);
     }
 
     // HP-бар (если HP < max)
@@ -271,10 +353,10 @@ export class WorldRenderer {
   }
 
   #drawHPBar(ctx, enemy, screen) {
-    const barW = 20;
-    const barH = 2;
+    const barW = enemy.isBoss ? 48 : 27;
+    const barH = enemy.isBoss ? 4 : 3;
     const x = Math.round(screen.x - barW / 2);
-    const y = Math.round(screen.y - enemy.height / 2 - 12);
+    const y = Math.round(screen.y - (enemy.isBoss ? 48 : 32));
 
     ctx.fillStyle = '#000';
     ctx.fillRect(x - 1, y - 1, barW + 2, barH + 2);
@@ -292,10 +374,7 @@ export class WorldRenderer {
     if (this.#spriteRegistry.has(npc.typeName)) {
       this.#spriteRegistry.draw(ctx, npc.typeName, screen.x, screen.y);
     } else {
-      this.#drawPlaceholder(ctx, npc, screen.x, screen.y, npc.color, npc.displayName, {
-        strokeColor: '#000',
-        labelColor: '#c8a96e',
-      });
+      drawNpcArt(ctx, npc, screen.x, screen.y, cam.zoom, performance.now() / 1000);
     }
 
     // Подсказка взаимодействия
@@ -315,7 +394,7 @@ export class WorldRenderer {
 
   #drawGate(ctx, gate, cam) {
     const screen = cam.worldToScreen(gate.x, gate.y);
-    const ts = 24;  // tileSize
+    const ts = 24 * cam.zoom;  // visual: world tile scaled to screen
 
     // Фиолетовое свечение
     const grad = ctx.createRadialGradient(screen.x, screen.y, 0, screen.x, screen.y, ts);

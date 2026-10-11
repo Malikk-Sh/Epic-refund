@@ -15,9 +15,31 @@ export const BALANCE = {
     rollSpeed: 240,
     rollDuration: 0.3,
     rollCooldown: 0.55,
+    inputBufferWindow: 0.36,
+    assistExtraRange: 0, // только реальные попадания, включая хитбокс врага // секунды: короткое касание во время анимации не пропадёт
     staminaMax: 100,
     staminaRegen: 25,
+    manaRegen: 8,
     staminaRegenDelay: 0.8,
+  },
+
+  abilities: {
+    projectileSpawnOffset: 12,
+    projectileHitRadius: 5,
+    projectileMaxDistance: 500,
+    projectileAimRange: 230,
+    teleportMinDistance: 18,
+    teleportStep: 8,
+    teleportImpactRadius: 50,
+    explosionFlashDuration: 0.36,
+    flashVisualRadius: 74,
+    shieldVisualRadius: 22,
+    stealthVisualRadius: 15,
+    meteorAngleStep: 2.39996,
+    meteorFallbackRadius: 72,
+    annihilationTickRate: 0.5,
+    cooldownRefreshInterval: 0.15,
+    maxSimulationStep: 0.05,
   },
 
   combat: {

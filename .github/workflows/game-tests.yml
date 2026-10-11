@@ -1,0 +1,19 @@
+name: Game regression tests
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run browser game logic tests
+        working-directory: epic-refund-v2
+        run: node tests/runner.js

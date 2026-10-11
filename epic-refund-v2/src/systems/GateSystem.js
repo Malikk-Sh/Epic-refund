@@ -27,6 +27,7 @@ export class GateSystem {
   #activeGate = null;
   #sacrificesRemaining = 0;
   #pendingSacrifices = [];
+  #partialSacrifices = new Map(); // progress survives cancel/re-enter
 
   constructor(eventBus, skillTree) {
     this.#eventBus = eventBus;
@@ -36,7 +37,8 @@ export class GateSystem {
   // Игрок подходит к Вратам
   approach(gateData, currentLevel) {
     const { id, requirement, size } = gateData;
-    const count = this.#getSacrificeCount(size);
+    const paid = this.#partialSacrifices.get(id) ?? [];
+    const count = Math.max(0, this.#getSacrificeCount(size) - paid.length);
     const removable = this.#skillTree.getRemovableSkills(requirement);
 
     if (removable.length < count) {
@@ -47,7 +49,7 @@ export class GateSystem {
 
     this.#activeGate = { ...gateData, currentLevel };
     this.#sacrificesRemaining = count;
-    this.#pendingSacrifices = [];
+    this.#pendingSacrifices = [...paid];
 
     this.#eventBus.emit('gate:approach', {
       gateId: id,
@@ -77,6 +79,7 @@ export class GateSystem {
     // Совершаем жертву
     const result = this.#skillTree.removeSkill(skillId, this.#activeGate.currentLevel);
     this.#pendingSacrifices.push(skillId);
+    this.#partialSacrifices.set(this.#activeGate.id, [...this.#pendingSacrifices]);
     this.#sacrificesRemaining--;
 
     this.#eventBus.emit('gate:sacrifice', {
@@ -98,11 +101,11 @@ export class GateSystem {
 
   #openGate() {
     const gate = this.#activeGate;
+    this.#partialSacrifices.delete(gate.id);
     this.#eventBus.emit('gate:open', {
       gateId: gate.id,
       sacrifices: [...this.#pendingSacrifices],
     });
-
     this.#activeGate = null;
     this.#pendingSacrifices = [];
   }
@@ -131,6 +134,18 @@ export class GateSystem {
   getRemovableForCurrentGate() {
     if (!this.#activeGate) return [];
     return this.#skillTree.getRemovableSkills(this.#activeGate.requirement);
+  }
+
+  serialize() {
+    return Object.fromEntries(this.#partialSacrifices);
+  }
+
+  deserialize(data = {}) {
+    this.cancel();
+    this.#partialSacrifices.clear();
+    for (const [gateId, paid] of Object.entries(data)) {
+      if (Array.isArray(paid)) this.#partialSacrifices.set(gateId, [...paid]);
+    }
   }
 
   #getSacrificeCount(size) {

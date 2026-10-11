@@ -36,20 +36,25 @@ export class InputManager {
   #held = new Set();
   #pressed = new Set();
   #released = new Set();
+  #virtualHeld = new Set();
+  #touchAssistEnabled = false;
+  #onKeyDownBound = this.#onKeyDown.bind(this);
+  #onKeyUpBound = this.#onKeyUp.bind(this);
+  #onBlurBound = this.#onBlur.bind(this);
+  #onContextMenuBound = (e) => e.preventDefault();
 
   constructor() {
-    window.addEventListener('keydown', this.#onKeyDown.bind(this));
-    window.addEventListener('keyup', this.#onKeyUp.bind(this));
-    window.addEventListener('blur', this.#onBlur.bind(this));
-    // Блокируем контекстное меню, чтобы не мешало геймплею
-    window.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('keydown', this.#onKeyDownBound);
+    window.addEventListener('keyup', this.#onKeyUpBound);
+    window.addEventListener('blur', this.#onBlurBound);
+    window.addEventListener('contextmenu', this.#onContextMenuBound);
   }
 
   #onKeyDown(e) {
     const action = KEY_MAP[e.code];
     if (!action) return;
     e.preventDefault();
-    if (!this.#held.has(action)) {
+    if (!this.isHeld(action)) {
       this.#held.add(action);
       this.#pressed.add(action);
     }
@@ -59,11 +64,12 @@ export class InputManager {
     const action = KEY_MAP[e.code];
     if (!action) return;
     this.#held.delete(action);
-    this.#released.add(action);
+    if (!this.#virtualHeld.has(action)) this.#released.add(action);
   }
 
   #onBlur() {
     this.#held.clear();
+    this.#virtualHeld.clear();
     this.#pressed.clear();
     this.#released.clear();
   }
@@ -74,7 +80,24 @@ export class InputManager {
     this.#released.clear();
   }
 
-  isHeld(action)     { return this.#held.has(action); }
+  pressVirtual(action) {
+    if (!this.isHeld(action)) this.#pressed.add(action);
+    this.#virtualHeld.add(action);
+  }
+
+  releaseVirtual(action) {
+    if (!this.#virtualHeld.delete(action)) return;
+    if (!this.#held.has(action)) this.#released.add(action);
+  }
+
+  releaseAllVirtual() {
+    for (const action of [...this.#virtualHeld]) this.releaseVirtual(action);
+  }
+
+  setTouchAssistEnabled(value) { this.#touchAssistEnabled = Boolean(value); }
+  get touchAssistEnabled() { return this.#touchAssistEnabled; }
+
+  isHeld(action)     { return this.#held.has(action) || this.#virtualHeld.has(action); }
   isPressed(action)  { return this.#pressed.has(action); }
   isReleased(action) { return this.#released.has(action); }
 
@@ -96,8 +119,10 @@ export class InputManager {
   }
 
   destroy() {
-    window.removeEventListener('keydown', this.#onKeyDown.bind(this));
-    window.removeEventListener('keyup', this.#onKeyUp.bind(this));
-    window.removeEventListener('blur', this.#onBlur.bind(this));
+    window.removeEventListener('keydown', this.#onKeyDownBound);
+    window.removeEventListener('keyup', this.#onKeyUpBound);
+    window.removeEventListener('blur', this.#onBlurBound);
+    window.removeEventListener('contextmenu', this.#onContextMenuBound);
+    this.releaseAllVirtual();
   }
 }

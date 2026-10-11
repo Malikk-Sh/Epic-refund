@@ -134,7 +134,7 @@ export class Enemy {
     this.vx = this.vy = 0;
     const dist = MathUtils.distance(this.x, this.y, player.x, player.y);
 
-    if (dist < this.detectionRange) {
+    if (dist < this.detectionRange * (player.isStealthed ? 0.5 : 1)) {
       if (behavior === 'panic') {
         this.#setState(ENEMY_STATE.FLEE);
       } else {
@@ -151,7 +151,7 @@ export class Enemy {
 
   #updatePatrol(dt, player, behavior) {
     const dist = MathUtils.distance(this.x, this.y, player.x, player.y);
-    if (dist < this.detectionRange) {
+    if (dist < this.detectionRange * (player.isStealthed ? 0.5 : 1)) {
       this.#setState(behavior === 'panic' ? ENEMY_STATE.FLEE : ENEMY_STATE.ALERT);
       this.#alertTimer = 0.4;
       return;
@@ -220,7 +220,7 @@ export class Enemy {
     }
 
     // Слишком далеко — возврат к патрулю
-    if (dist > this.detectionRange * 2.5) {
+    if (dist > this.detectionRange * (player.isStealthed ? 0.5 : 1) * 2.5) {
       this.#setState(ENEMY_STATE.PATROL);
       return;
     }

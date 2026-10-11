@@ -1,6 +1,6 @@
 // Сохранения через localStorage. При изменении структуры — увеличивай SAVE_VERSION.
 
-const SAVE_VERSION = '0.2.0';
+const SAVE_VERSION = '0.3.0';
 const SAVE_KEY_PREFIX = 'epic_refund_save_';
 const AUTO_SAVE_SLOT = 'auto';
 
@@ -11,9 +11,10 @@ export class SaveManager {
     return {
       version: SAVE_VERSION,
       timestamp: Date.now(),
-      currentLevel: 2,
-      currentRoom: 'room_01',
-      skillTree: {},
+      currentLevelKey: 'level_01',
+      currentRoomId: 'l1_room_01',
+      skillTree: null,
+      gates: {},
       player: {
         maxHP: 100,
         currentHP: 100,
@@ -22,11 +23,7 @@ export class SaveManager {
         maxStamina: 100,
         currentStamina: 100,
       },
-      world: {
-        visitedRooms: [],
-        defeatedEnemies: {},
-        opendGates: [],
-      },
+      world: {},
       meta: {
         totalPlayTime: 0,
         deathCount: 0,
@@ -62,14 +59,21 @@ export class SaveManager {
   }
 
   loadAuto() { return this.load(AUTO_SAVE_SLOT); }
-  hasSave(slot) { return localStorage.getItem(SAVE_KEY_PREFIX + slot) !== null; }
-  deleteSave(slot) { localStorage.removeItem(SAVE_KEY_PREFIX + slot); }
+  hasSave(slot) {
+    try { return localStorage.getItem(SAVE_KEY_PREFIX + slot) !== null; }
+    catch { return false; }
+  }
+  deleteSave(slot) {
+    try { localStorage.removeItem(SAVE_KEY_PREFIX + slot); }
+    catch (e) { console.warn('[SaveManager] Не удалось удалить сохранение:', e); }
+  }
   getCurrentSave() { return this.#currentSave; }
 
   #migrate(data) {
     if (data.version === SAVE_VERSION) return data;
-    console.warn(`[SaveManager] Миграция ${data.version} → ${SAVE_VERSION}`);
-    data.version = SAVE_VERSION;
-    return data;
+    // Старые сохранения не содержат состояния комнат и Врат;
+    // не подменяем их неполноценной "миграцией".
+    console.warn('[SaveManager] Несовместимая версия сохранения:', data.version);
+    return null;
   }
 }

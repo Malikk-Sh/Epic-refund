@@ -83,6 +83,7 @@ export function createLevel03(systems) {
   const gatePos03 = room03.tilemap.tileToWorldCenter(8, 4);
   room03.setGate({
     id: 'gate_3_1',
+    exitDirection: 'south',
     requirement: GATE_REQUIREMENTS.ATTACK,
     size: GATE_SIZES.MINOR,
     label: 'Врата Силы',
@@ -144,6 +145,7 @@ export function createLevel03(systems) {
   const gatePos07 = room07.tilemap.tileToWorldCenter(7, 4);
   room07.setGate({
     id: 'gate_3_2',
+    exitDirection: 'south',
     requirement: GATE_REQUIREMENTS.CHOICE,
     size: GATE_SIZES.MAJOR,
     label: 'Врата Выбора',

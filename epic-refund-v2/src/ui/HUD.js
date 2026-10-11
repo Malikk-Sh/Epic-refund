@@ -40,6 +40,7 @@ export class HUD {
     this.#eventBus = eventBus;
 
     eventBus.on('skill:lost', () => this.#updateVisibility());
+    eventBus.on('skill:restored', () => this.#updateVisibility());
     this.#updateVisibility();
   }
 
@@ -231,66 +232,57 @@ export class HUD {
   #drawSkillPanel(ctx, W, H) {
     const alpha = this.#elementAlpha.skillPanel;
     if (alpha <= 0.01) return;
+    const branches = Object.keys(SKILL_BRANCHES);
+    // Компактный счётчик утраченного. Раньше огромные 20 иконок перекрывали арену
+    // и пальцы на смартфоне. Теперь HUD занимает только верхнюю центральную полосу.
+    const runeW = 10, runeGap = 3, branchGap = 10;
+    const groupW = 4 * runeW + 3 * runeGap;
+    const totalW = branches.length * groupW + (branches.length - 1) * branchGap;
+    const x = Math.round((W - totalW) / 2);
+    const y = 12;
+    const count = this.#skillTree.getActiveSkillCount();
 
     ctx.save();
     ctx.globalAlpha = alpha;
-
-    const iconSize = HB.skillIconSize;   // 22
-    const iconGap  = HB.skillIconGap;    // 3
-    const groupGap = HB.skillGroupGap;   // 8
-
-    const branches = Object.keys(SKILL_BRANCHES);
-    const groupW = 4 * iconSize + 3 * iconGap;  // ширина одной ветки
-    const totalW = branches.length * groupW + (branches.length - 1) * groupGap;
-
-    const labelH = 10;   // высота строки с именем ветки
-    const panelH = labelH + 4 + iconSize + 8; // метка + отступ + иконки + нижний отступ
-    const panelX = Math.round((W - totalW) / 2) - 6;
-    const panelY = H - panelH - 4;
-
-    // Фоновая панель
-    ctx.fillStyle = 'rgba(0,0,0,0.72)';
-    ctx.fillRect(panelX - 2, panelY - 2, totalW + 16, panelH + 2);
-    ctx.strokeStyle = 'rgba(200,169,110,0.35)';
+    ctx.fillStyle = 'rgba(9,12,19,.83)';
+    ctx.fillRect(x - 12, y - 7, totalW + 24, 43);
+    ctx.strokeStyle = 'rgba(213,176,108,.38)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(panelX - 1.5, panelY - 1.5, totalW + 15, panelH + 1);
+    ctx.strokeRect(x - 11.5, y - 6.5, totalW + 23, 42);
 
-    let gx = panelX + 4;
-    const iconY = panelY + labelH + 4;
+    ctx.font = 'bold 9px monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#e7ca8a';
+    ctx.fillText('СИЛА, КОТОРУЮ ТЫ ТЕРЯЕШЬ   ' + count + ' / 20',
+      W / 2, y + 2);
 
-    for (const branch of branches) {
-      const branchColor = BRANCH_COLORS[branch];
-      const skillIds = SKILL_BRANCHES[branch];
-
-      // Цветная полоска-заголовок ветки
-      ctx.fillStyle = branchColor;
-      ctx.globalAlpha = alpha * 0.9;
-      ctx.fillRect(gx, panelY + 1, groupW, 2);
-      ctx.globalAlpha = alpha;
-
-      // Метка ветки
-      ctx.font = 'bold 6px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = branchColor;
-      ctx.fillText(BRANCH_LABELS[branch], gx + groupW / 2, panelY + 4);
-
-      // Иконки навыков
-      for (let i = 0; i < skillIds.length; i++) {
-        const skillId = skillIds[i];
-        const skillData = SKILLS[skillId];
-        const ix = gx + i * (iconSize + iconGap);
-        const iy = iconY;
-
-        const isActive = this.#skillTree.isSkillActive(skillId);
-        const isEcho   = this.#skillTree.isEchoActive(skillId);
-
-        this.#drawSkillIcon(ctx, skillData, ix, iy, iconSize, isActive, isEcho, alpha);
+    for (let b = 0; b < branches.length; b++) {
+      const branch = branches[b];
+      const groupX = x + b * (groupW + branchGap);
+      const color = BRANCH_COLORS[branch];
+      for (let i = 0; i < 4; i++) {
+        const skillId = SKILL_BRANCHES[branch][i];
+        const active = this.#skillTree.isActive(skillId);
+        const echo = this.#skillTree.isEchoActive(skillId);
+        const px = groupX + i * (runeW + runeGap), py = y + 13;
+        ctx.fillStyle = active ? color : '#25212a';
+        ctx.fillRect(px, py, runeW, 9);
+        if (active) {
+          ctx.fillStyle = 'rgba(255,255,255,.32)';
+          ctx.fillRect(px + 1, py + 1, runeW - 2, 2);
+        }
+        ctx.strokeStyle = echo && !active ? color : active ? '#e3cda1' : '#47404b';
+        ctx.lineWidth = echo && !active ? 2 : 1;
+        ctx.strokeRect(px + .5, py + .5, runeW - 1, 8);
+        if (!active) {
+          ctx.fillStyle = echo ? color : '#554650';
+          ctx.fillRect(px + 4, py + 4, 2, 2);
+        }
       }
-
-      gx += groupW + groupGap;
+      ctx.fillStyle = color;
+      ctx.fillRect(groupX, y + 25, groupW, 2);
     }
-
     ctx.restore();
   }
 
@@ -413,7 +405,7 @@ export class HUD {
     const barW = Math.min(280, W - 60);
     const barH = 12;
     const x = Math.round((W - barW) / 2);
-    const y = H - 130;
+    const y = 91;
 
     ctx.save();
 

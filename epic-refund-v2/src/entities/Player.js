@@ -2,6 +2,7 @@
 // Никаких расчётов урона внутри — только через CombatSystem.
 
 import { BALANCE } from '../data/balance.js';
+import { chooseCombatTarget } from '../systems/CombatTargeting.js';
 
 const B = BALANCE.player;
 const BC = BALANCE.combat;
@@ -40,6 +41,8 @@ export class Player {
   #rollCooldown = 0;
   #iFrameTimer = 0;
   #combatTimer = 0;
+  #bufferedAction = null;
+  #bufferTimer = 0;
   #parryWindowTimer = 0;
 
   // Комбо
@@ -61,6 +64,11 @@ export class Player {
 
   // Магический щит
   shieldCharges = 0;
+  #hasShieldSkill = false;
+  isStealthed = false;
+  touchAimAssist = false;
+  aimTarget = null;
+  abilityInvulnerable = false;
 
   // Колбэк на атаку (регистрируется сценой)
   onAttack = null;
@@ -79,6 +87,7 @@ export class Player {
     this.#applySkillStats();
 
     this.#eventBus.on('skill:lost', () => this.#applySkillStats());
+    this.#eventBus.on('skill:restored', () => this.#applySkillStats());
   }
 
   #applySkillStats() {
@@ -92,19 +101,31 @@ export class Player {
       this.hp = Math.round(newMaxHP * pct);
     }
 
+    const previousMaxMana = this.maxMana;
     this.maxMana = this.#skillTree.isActive('mag_base') ? 100 : 0;
+    if (previousMaxMana === 0 && this.maxMana > 0) this.mana = this.maxMana;
     if (this.mana > this.maxMana) this.mana = this.maxMana;
 
-    this.shieldCharges = this.#skillTree.isActive('def_t3') ? 3 : 0;
+    const hasShield = this.#skillTree.isActive('def_t3');
+    // Потеря другого навыка не может бесплатно восстановить щит до 3 зарядов.
+    if (hasShield && !this.#hasShieldSkill) this.shieldCharges = 3;
+    if (!hasShield) this.shieldCharges = 0;
+    this.#hasShieldSkill = hasShield;
   }
 
   // ===== ГЛАВНЫЙ ЦИКЛ =====
 
-  update(dt, input, tilemap) {
+  update(dt, input, tilemap, enemies = []) {
     if (!this.isAlive) return;
 
+    this.touchAimAssist = Boolean(input.touchAssistEnabled);
+    this.aimTarget = this.touchAimAssist
+      ? chooseCombatTarget(enemies, this.x, this.y, this.facingX, this.facingY,
+        BC.attackRangeLight + B.assistExtraRange)
+      : null;
     this.#stateTimer += dt;
     this.#updateTimers(dt);
+    this.#captureAction(input);
 
     if (this.#state === 'roll') {
       this.#updateRoll(dt, tilemap);
@@ -113,8 +134,12 @@ export class Player {
     } else if (this.#state === 'hurt') {
       this.#updateHurt(dt);
     } else {
-      this.#handleInput(input);
-      this.#applyMovement(dt, input, tilemap);
+      this.#handleInput(input, enemies);
+      // Атака и кувырок сохраняют своё FSM-состояние. Ранее вызов движения
+      // сразу превращал «attack» обратно в «idle», ломая анимацию удара.
+      if (this.#state !== 'attack' && this.#state !== 'roll') {
+        this.#applyMovement(dt, input, tilemap);
+      }
     }
 
     this.#updateStamina(dt);
@@ -126,6 +151,8 @@ export class Player {
     if (this.#rollCooldown > 0)   this.#rollCooldown -= dt;
     if (this.#iFrameTimer > 0)    this.#iFrameTimer -= dt;
     if (this.#comboTimer > 0)     this.#comboTimer -= dt;
+    if (this.#bufferTimer > 0) this.#bufferTimer = Math.max(0, this.#bufferTimer - dt);
+    if (this.#bufferTimer === 0) this.#bufferedAction = null;
     if (this.#parryWindowTimer > 0) {
       this.#parryWindowTimer -= dt;
       if (this.#parryWindowTimer <= 0) this.#isParrying = false;
@@ -150,29 +177,71 @@ export class Player {
     }
   }
 
-  #handleInput(input) {
-    // Атаки
-    if (input.isPressed('attackLight') && this.#attackCooldown <= 0) {
-      this.#tryLightAttack();
-      return;
+  // Любое краткое касание во время атаки / переката / стана попадёт в
+  // следующее свободное окно. Иначе короткое касание теряется при 60 FPS.
+  #captureAction(input) {
+    for (const action of ['roll', 'skill4', 'skill3', 'skill2', 'skill1',
+                          'attackHeavy', 'attackLight']) {
+      if (input.isPressed(action)) {
+        this.#bufferedAction = action;
+        this.#bufferTimer = B.inputBufferWindow;
+        return;
+      }
     }
+  }
 
-    if (input.isPressed('attackHeavy') && this.#attackCooldown <= 0) {
-      this.#tryHeavyOrParry();
-      return;
-    }
-
-    // Перекат
-    if (input.isPressed('roll') && this.#rollCooldown <= 0 && this.stamina >= BC.staminaCostRoll) {
+  #handleInput(input, enemies) {
+    const action = this.#bufferedAction;
+    if (action === 'roll' &&
+        this.#rollCooldown <= 0 && this.stamina >= BC.staminaCostRoll) {
+      this.clearBufferedAction();
       this.#tryRoll(input);
       return;
     }
+    if (action === 'attackLight' && this.#attackCooldown <= 0 &&
+        this.stamina >= BC.staminaCostLight) {
+      this.clearBufferedAction();
+      this.#aimForTouch(enemies, BC.attackRangeLight + B.assistExtraRange);
+      this.#tryLightAttack();
+      return;
+    }
+    if (action === 'attackHeavy' && this.#attackCooldown <= 0) {
+      this.clearBufferedAction();
+      this.#aimForTouch(enemies, BC.attackRangeHeavy + B.assistExtraRange);
+      this.#tryHeavyOrParry();
+      return;
+    }
+    const skills = { skill1: 'str_t3', skill2: 'mag_t2', skill3: 'agi_t3' };
+    if (action === 'skill4' || skills[action]) {
+      this.clearBufferedAction();
+      if (action === 'skill4') this.#tryUltima();
+      else this.#trySkill(skills[action]);
+      return;
+    }
+    // Удержание атаки = новая атака после cooldown. Это особенно важно
+    // на телефонах: не нужно многократно тыкать в крошечную кнопку.
+    if (!action && input.isHeld('attackLight') &&
+        this.#attackCooldown <= 0 && this.stamina >= BC.staminaCostLight) {
+      this.#aimForTouch(enemies, BC.attackRangeLight + B.assistExtraRange);
+      this.#tryLightAttack();
+    }
+  }
 
-    // Навыки
-    if (input.isPressed('skill1')) this.#trySkill('str_t3');
-    if (input.isPressed('skill2')) this.#trySkill('mag_t2');
-    if (input.isPressed('skill3')) this.#trySkill('agi_t3');
-    if (input.isPressed('skill4')) this.#tryUltima();
+  #aimForTouch(enemies, range) {
+    if (!this.touchAimAssist) return;
+    const target = chooseCombatTarget(enemies, this.x, this.y,
+      this.facingX, this.facingY, range);
+    if (!target) return;
+    const dx = target.x - this.x, dy = target.y - this.y;
+    const length = Math.hypot(dx, dy) || 1;
+    this.facingX = dx / length;
+    this.facingY = dy / length;
+    this.aimTarget = target;
+  }
+
+  clearBufferedAction() {
+    this.#bufferedAction = null;
+    this.#bufferTimer = 0;
   }
 
   #applyMovement(dt, input, tilemap) {
@@ -180,7 +249,7 @@ export class Player {
     const echo = this.#echoSystem.getPassiveBonuses();
     const speedMod = echo.walkSpeedMultiplier;
 
-    const speed = B.baseSpeed * speedMod;
+    const speed = B.baseSpeed * speedMod * (this.isStealthed ? 0.6 : 1);
 
     this.vx = mv.x * speed;
     this.vy = mv.y * speed;
@@ -245,7 +314,8 @@ export class Player {
 
   #tryHeavyOrParry() {
     // Парирование (если есть навык)
-    if (this.#skillTree.isActive('def_t2') && !this.#isParrying) {
+    if (this.#skillTree.isActive('def_t2') && !this.#isParrying &&
+        this.stamina >= BC.staminaCostParry) {
       this.#isParrying = true;
       this.#parryWindowTimer = BC.parryWindow;
       this.stamina = Math.max(0, this.stamina - BC.staminaCostParry);
@@ -254,7 +324,8 @@ export class Player {
     }
 
     // Тяжёлый удар (если есть)
-    if (this.#skillTree.isActive('str_t2')) {
+    if (this.#skillTree.isActive('str_t2') &&
+        this.stamina >= BC.staminaCostHeavy) {
       const echo = this.#echoSystem.getPassiveBonuses();
       const damage = this.#combatSystem.calculatePlayerDamage({
         baseDamage: 45,
@@ -356,12 +427,15 @@ export class Player {
 
   #updateStamina(dt) {
     // Регенерация вне активных действий
-    if (this.#attackCooldown <= 0 && this.#state !== 'roll') {
+    if (this.#attackCooldown <= 0 && this.#state !== 'roll' && !this.isStealthed) {
       this.stamina = Math.min(this.maxStamina, this.stamina + B.staminaRegen * dt);
     }
   }
 
   #updateRegen(dt) {
+    if (this.maxMana > 0 && this.mana < this.maxMana) {
+      this.mana = Math.min(this.maxMana, this.mana + B.manaRegen * dt);
+    }
     if (!this.#skillTree.isActive('aur_base')) return;
     if (this.hp >= this.maxHP) return;
     const rate = this.inCombat ? 0.5 : 2;
@@ -371,7 +445,7 @@ export class Player {
   // ===== ПОЛУЧЕНИЕ УРОНА =====
 
   takeDamage(rawDamage, sourceX, sourceY) {
-    if (this.#iFrameTimer > 0) return false;
+    if (this.#iFrameTimer > 0 || this.abilityInvulnerable) return false;
 
     const echo = this.#echoSystem.getPassiveBonuses();
     const result = this.#combatSystem.calculateDamageToPlayer({
@@ -453,6 +527,27 @@ export class Player {
   onRoomEnter() {
     const echo = this.#echoSystem.getPassiveBonuses();
     if (echo.healOnRoomEnter > 0) this.heal(echo.healOnRoomEnter);
+  }
+
+  reviveFromCheckpoint(state = {}) {
+    this.isAlive = true;
+    this.inCombat = false;
+    this.#setState('idle');
+    this.#iFrameTimer = 1;
+    this.#attackCooldown = 0;
+    this.#rollCooldown = 0;
+    this.clearBufferedAction();
+    this.#isParrying = false;
+    this.#isRolling = false;
+    this.#deathSaveUsed = false;
+    this.isStealthed = false;
+    this.aimTarget = null;
+    this.abilityInvulnerable = false;
+    this.#applySkillStats();
+    this.hp = Math.max(1, Math.min(this.maxHP, state.hp ?? this.maxHP));
+    this.mana = Math.max(0, Math.min(this.maxMana, state.mana ?? this.maxMana));
+    this.stamina = Math.max(0, Math.min(this.maxStamina, state.stamina ?? this.maxStamina));
+    if (this.#hasShieldSkill) this.shieldCharges = Math.max(0, Math.min(3, state.shieldCharges ?? 3));
   }
 
   resetForNewLevel() {

@@ -38,10 +38,12 @@ export class HUDManager {
   }
 
   #setupListeners() {
-    this.#eventBus.on('skill:lost', ({ remainingCount }) => {
+    const onCountChange = ({ remainingCount }) => {
       this.#skillCount = remainingCount;
       this.#updateVisibility();
-    });
+    };
+    this.#eventBus.on('skill:lost', onCountChange);
+    this.#eventBus.on('skill:restored', onCountChange);
   }
 
   // Привязываем PixiJS объекты к элементам HUD

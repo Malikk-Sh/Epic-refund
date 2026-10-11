@@ -23,6 +23,10 @@ export class Camera {
   // zoom=2 → тайл 24 у.е. = 48 логических пикселей рендерера
   #zoom = 2.0;
 
+  // Pseudo-3/4: удалённые ряды выглядят плотнее, но физика остаётся 2D.
+  // Высота спрайтов не сжимается; сжимается только проекция пола/координат.
+  #pitch = 0.84;
+
   // Границы мира (текущей комнаты)
   #worldMinX = 0;
   #worldMinY = 0;
@@ -40,10 +44,15 @@ export class Camera {
 
   setZoom(zoom) { this.#zoom = zoom; }
   get zoom() { return this.#zoom; }
+  get pitch() { return this.#pitch; }
+  setPitch(value) {
+    if (!Number.isFinite(value) || value < 0.65 || value > 1) throw new RangeError('Camera pitch 0.65..1');
+    this.#pitch = value;
+  }
 
   // Сколько мировых единиц видно на экране при текущем zoom
   get visibleWorldWidth()  { return this.#viewWidth  / this.#zoom; }
-  get visibleWorldHeight() { return this.#viewHeight / this.#zoom; }
+  get visibleWorldHeight() { return this.#viewHeight / (this.#zoom * this.#pitch); }
 
   setWorldBounds(minX, minY, maxX, maxY) {
     this.#worldMinX = minX;
@@ -82,8 +91,12 @@ export class Camera {
   }
 
   update(dt) {
-    this.#x += (this.#targetX - this.#x) * LERP_SPEED;
-    this.#y += (this.#targetY - this.#y) * LERP_SPEED;
+    // Одно и то же следование на 30, 60 и 120 Гц. Старое постоянное
+    // LERP_SPEED за кадр делало камеру вдвое ленивее на слабых смартфонах.
+    const frameCount = Math.max(0, dt * 60);
+    const blend = 1 - Math.pow(1 - LERP_SPEED, frameCount);
+    this.#x += (this.#targetX - this.#x) * blend;
+    this.#y += (this.#targetY - this.#y) * blend;
 
     if (this.#transitioning) {
       this.#transitionTimer -= dt;
@@ -100,7 +113,7 @@ export class Camera {
     if (this.#shakeIntensity > 0.1) {
       this.#shakeOffsetX = (Math.random() * 2 - 1) * this.#shakeIntensity;
       this.#shakeOffsetY = (Math.random() * 2 - 1) * this.#shakeIntensity;
-      this.#shakeIntensity *= SHAKE_DECAY;
+      this.#shakeIntensity *= Math.pow(SHAKE_DECAY, frameCount);
     } else {
       this.#shakeIntensity = 0;
       this.#shakeOffsetX = 0;
@@ -152,14 +165,14 @@ export class Camera {
   worldToScreen(wx, wy) {
     return {
       x: (wx - this.#x) * this.#zoom + this.#shakeOffsetX,
-      y: (wy - this.#y) * this.#zoom + this.#shakeOffsetY,
+      y: (wy - this.#y) * this.#zoom * this.#pitch + this.#shakeOffsetY,
     };
   }
 
   screenToWorld(sx, sy) {
     return {
       x: sx / this.#zoom + this.#x,
-      y: sy / this.#zoom + this.#y,
+      y: sy / (this.#zoom * this.#pitch) + this.#y,
     };
   }
 

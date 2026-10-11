@@ -2,13 +2,14 @@
 // Объединяет: игрок, уровень с комнатами, HUD, диалоги, Врата UI, частицы.
 
 import { Player } from '../entities/Player.js';
+import { AbilitySystem } from '../systems/AbilitySystem.js';
 import { HUD } from '../ui/HUD.js';
 import { DialogueSystem } from '../ui/DialogueSystem.js';
 import { GateUI } from '../ui/GateUI.js';
 import { Notifications } from '../ui/Notifications.js';
 import { WorldRenderer } from '../render/WorldRenderer.js';
 import { ParticleSystem } from '../systems/ParticleSystem.js';
-import { createLevelByKey } from '../levels/LevelRegistry.js';
+import { createLevelByKey, hasLevel } from '../levels/LevelRegistry.js';
 import { MathUtils } from '../utils/MathUtils.js';
 import { BALANCE } from '../data/balance.js';
 import { KANE_DIALOGUES, pickKaneLine } from '../data/dialogues/kane_dialogues.js';
@@ -27,6 +28,7 @@ export class GameScene {
   #gateUI;
   #notifications;
   #particles;
+  #abilities;
 
   // Накопленные атаки этого кадра
   #pendingAttacks = [];
@@ -38,6 +40,14 @@ export class GameScene {
   #firstGateApproached = false;
   // Для одноразовой реплики при встрече с боссом (сбрасывается на входе в комнату)
   #bossEncountered = false;
+  #currentLevelKey = 'level_01';
+  #worldState = {};
+  #completed = false;
+  #damageTintTimer = 0;
+  #roomEpoch = 0;
+  #deferredRoomEvents = new Set();
+  #pausedRoomEvents = [];
+  #gamePaused = false;
 
   constructor(deps) {
     this.#deps = deps;
@@ -64,9 +74,50 @@ export class GameScene {
 
     // События
     this.#setupEventHandlers();
+    this.#abilities = new AbilitySystem({
+      player: this.#player, skillTree: d.skillTree, eventBus: d.eventBus,
+      camera: d.camera, getRoom: () => this.#level?.currentRoom,
+    });
 
-    // Стартовый уровень
-    this.#loadLevel('level_01');
+    // Загружаем последний контрольный пункт, либо создаём новый.
+    const saved = d.saveManager.loadAuto();
+    if (saved?.skillTree?.skills && saved.currentLevelKey &&
+        hasLevel(saved.currentLevelKey)) {
+      d.skillTree.deserialize(saved.skillTree);
+      d.gateSystem.deserialize(saved.gates ?? {});
+      this.#worldState = saved.world ?? {};
+      this.#loadLevel(saved.currentLevelKey, saved.currentRoomId);
+      this.#player.reviveFromCheckpoint(saved.player);
+    } else {
+      this.#loadLevel('level_01');
+    }
+    this.#saveCheckpoint();
+  }
+
+  // Изолируем все задержанные реплики от комнаты, в которой они начались.
+  // Иначе сообщение об уровне/боссе может прервать диалог спустя несколько секунд
+  // после перехода в другую комнату или после смерти.
+  #clearDeferredRoomEvents() {
+    this.#roomEpoch++;
+    for (const timer of this.#deferredRoomEvents) clearTimeout(timer);
+    this.#deferredRoomEvents.clear();
+    this.#pausedRoomEvents.length = 0;
+  }
+
+  #deferInRoom(fn, milliseconds) {
+    const epoch = this.#roomEpoch;
+    const timer = setTimeout(() => {
+      this.#deferredRoomEvents.delete(timer);
+      if (epoch !== this.#roomEpoch || !this.#player?.isAlive ||
+          this.#completed) return;
+      if (this.#gamePaused) {
+        // Сюжетное событие не теряется из-за короткой проверки настроек.
+        this.#pausedRoomEvents.push({ epoch, fn });
+        return;
+      }
+      fn();
+    }, milliseconds);
+    this.#deferredRoomEvents.add(timer);
   }
 
   // Загрузка/смена уровня.
@@ -74,7 +125,11 @@ export class GameScene {
   // fromDirection — с какой стороны игрок вошёл (для точки спавна).
   #loadLevel(levelKey, startRoomId = null, fromDirection = null) {
     const d = this.#deps;
+    this.#clearDeferredRoomEvents();
+    this.#abilities?.reset();
+    this.#player.clearBufferedAction();
 
+    this.#currentLevelKey = levelKey;
     this.#level = createLevelByKey(levelKey, {
       eventBus:    d.eventBus,
       skillTree:   d.skillTree,
@@ -82,7 +137,8 @@ export class GameScene {
       gateSystem:  d.gateSystem,
     });
 
-    if (startRoomId) this.#level.setStartRoom(startRoomId);
+    this.#restoreWorldState(levelKey);
+    if (startRoomId && this.#level.rooms.has(startRoomId)) this.#level.setStartRoom(startRoomId);
 
     // Ставим игрока на точку спавна целевой комнаты
     const startRoom = this.#level.currentRoom;
@@ -98,18 +154,91 @@ export class GameScene {
     this.#checkBossEncounter();
   }
 
+  #rememberWorldState() {
+    if (!this.#level) return;
+    const snapshot = {};
+    for (const [id, room] of this.#level.rooms) {
+      snapshot[id] = {
+        cleared: room.isCleared,
+        visited: room.isVisited,
+        seen: room.isSeen,
+        gateOpen: room.isGateOpen,
+        defeated: room.enemies.map(enemy => !enemy.isAlive),
+      };
+    }
+    this.#worldState[this.#currentLevelKey] = snapshot;
+  }
+
+  #restoreWorldState(levelKey) {
+    const state = this.#worldState[levelKey] ?? {};
+    for (const [id, room] of this.#level.rooms) {
+      const previous = state[id];
+      if (!previous) continue;
+      room.isCleared = Boolean(previous.cleared);
+      room.isVisited = Boolean(previous.visited);
+      room.isSeen = Boolean(previous.seen);
+      room.isGateOpen = Boolean(previous.gateOpen);
+      room.enemies.forEach((enemy, i) => {
+        if (previous.defeated?.[i]) {
+          enemy.isAlive = false;
+          enemy.hp = 0;
+        }
+      });
+      if (room.isCleared) room.openDoors();
+    }
+  }
+
+  #saveCheckpoint() {
+    this.#rememberWorldState();
+    this.#deps.saveManager.autoSave({
+      version: '0.3.0',
+      currentLevelKey: this.#currentLevelKey,
+      currentRoomId: this.#level.currentRoomId,
+      skillTree: this.#deps.skillTree.serialize(),
+      gates: this.#deps.gateSystem.serialize(),
+      player: {
+        hp: this.#player.hp,
+        mana: this.#player.mana,
+        stamina: this.#player.stamina,
+        shieldCharges: this.#player.shieldCharges,
+      },
+      world: this.#worldState,
+    });
+  }
+
+  #restartFromCheckpoint() {
+    const d = this.#deps;
+    const saved = d.saveManager.loadAuto();
+    if (!saved?.skillTree?.skills || !hasLevel(saved.currentLevelKey)) {
+      window.location.reload();
+      return;
+    }
+    this.#completed = false;
+    this.#pendingAttacks = [];
+    this.#abilities.reset(true);
+    this.#gateUI.hide();
+    if (this.#dialogue.isActive) this.#dialogue.hide();
+    d.gateSystem.deserialize(saved.gates ?? {});
+    d.skillTree.deserialize(saved.skillTree);
+    this.#worldState = saved.world ?? {};
+    this.#loadLevel(saved.currentLevelKey, saved.currentRoomId);
+    this.#player.reviveFromCheckpoint(saved.player);
+    d.inputManager.releaseAllVirtual();
+  }
+
   #announceLevel(levelKey) {
     const d = this.#deps;
     const INTROS = {
-      level_01: { title: 'Уровень 1: Гнилой Пик', line: KANE_DIALOGUES.environment.entered_rotten_peak[0] },
+      level_01: { title: 'Уровень 1: Проклятая тюрьма', line: 'Камень, решётки и чужие голоса. Из этого места есть только один путь — вперёд.' },
       level_02: { title: 'Уровень 2: Казармы Тьмы', line: KANE_DIALOGUES.environment.entered_barracks[0] },
     };
     const intro = INTROS[levelKey];
     if (!intro) return;
 
     this.#notifications.show(intro.title, 3.0, '#c8a96e');
-    setTimeout(() => {
-      d.eventBus.emit('player:speaks', { line: intro.line, duration: 4 });
+    this.#deferInRoom(() => {
+      if (!this.#dialogue.isActive && !this.#gateUI.visible)
+        d.eventBus.emit('player:speaks', { line: intro.line, duration: 4 });
     }, 1500);
   }
 
@@ -140,6 +269,16 @@ export class GameScene {
   #setupEventHandlers() {
     const { eventBus } = this.#deps;
     const on = (ev, fn) => this.#unsubs.push(eventBus.on(ev, fn));
+    on('game:pause', () => { this.#gamePaused = true; });
+    on('game:resume', () => {
+      this.#gamePaused = false;
+      const pending = this.#pausedRoomEvents.splice(0);
+      for (const { epoch, fn } of pending) {
+        if (epoch === this.#roomEpoch && this.#player.isAlive && !this.#completed) fn();
+      }
+    });
+    on('ui:dialogue', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
+    on('ui:gate', ({ visible }) => { if (visible) this.#player.clearBufferedAction(); });
 
     // Атаки — копим для проверки хитбоксов
     on('player:attack', (data) => {
@@ -177,9 +316,10 @@ export class GameScene {
       if (count <= 10) subcat = 'half';
       if (count <= 3)  subcat = 'last';
 
-      setTimeout(() => {
+      this.#deferInRoom(() => {
         const line = pickKaneLine('skillLost', subcat, phase);
-        if (line) eventBus.emit('player:speaks', { line, duration: 3.5 });
+        if (line && !this.#dialogue.isActive && !this.#gateUI.visible)
+          eventBus.emit('player:speaks', { line, duration: 3.5 });
       }, 3000);
 
       // Обновить реплики NPC во всех комнатах
@@ -198,6 +338,7 @@ export class GameScene {
 
     // Урон по игроку
     on('combat:playerHit', ({ source }) => {
+      this.#damageTintTimer = 0.24;
       this.#deps.camera.shake(4);
       if (source?.x !== undefined) {
         const dx = this.#player.x - source.x;
@@ -205,6 +346,33 @@ export class GameScene {
         const d = Math.sqrt(dx * dx + dy * dy) || 1;
         this.#particles.blood(this.#player.x, this.#player.y, dx / d, dy / d, 6);
       }
+    });
+
+    // Обратная связь: на смартфоне игрок должен сразу видеть результат нажатия.
+    const ABILITY_NAMES = {
+      str_t3: 'Вихрь клинков', mag_t2: 'Огненный шар', agi_t3: 'Скрытность',
+      str_t4: 'Танец смерти', mag_t4: 'Армагеддон', def_t4: 'Неуязвимость',
+      agi_t4: 'Телепортация', aur_t4: 'Аура аннигиляции',
+    };
+    on('ability:cast', ({ skillId, kind }) => {
+      if (kind === 'backstab') {
+        this.#notifications.show('УДАР ИЗ ТЕНИ ×3', 1.0, '#84e8a9');
+        return;
+      }
+      this.#notifications.show(ABILITY_NAMES[skillId] ?? 'Навык применён', 1.2, '#b4d8ff');
+      this.#particles.hitSparks(this.#player.x, this.#player.y, '#b5ccff', 9);
+    });
+    on('ability:blocked', ({ reason }) => {
+      const msg = reason === 'cooldown' ? 'Навык восстанавливается' :
+        reason === 'resource' ? 'Недостаточно энергии' : 'Нет места для телепорта';
+      this.#notifications.show(msg, 1.0, '#d5ad76');
+    });
+    on('ability:hit', ({ x, y, damage }) => {
+      this.#notifications.showDamage(Math.round(damage), x, y - 9, '#9ad5ff');
+      this.#particles.hitSparks(x, y, '#84c7ff', 4);
+    });
+    on('ability:impact', ({ x, y }) => {
+      this.#particles.hitSparks(x, y, '#ff994d', 14);
     });
 
     // Парирование
@@ -226,20 +394,27 @@ export class GameScene {
     // Очистка комнаты
     on('room:cleared', ({ roomId }) => {
       this.#notifications.show('Комната зачищена', 1.5, '#44aa44');
+      this.#saveCheckpoint();
     });
 
     // Вход в комнату
     on('room:enter', ({ firstVisit, roomId }) => {
-      if (firstVisit) {
-        // Можно показать имя комнаты, но для Milestone 1 тихо
-      }
+      const title = this.#level?.rooms.get(roomId)?.presentation?.title;
+      if (firstVisit && title)
+        this.#notifications.show(title, 2.4, '#e5ba82');
     });
 
     // Открытие Врат
-    on('gate:open', () => {
+    on('gate:open', ({ gateId }) => {
+      const room = [...this.#level.rooms.values()].find(item => item.gate?.id === gateId);
+      if (room) room.openGate();
       this.#notifications.show('Врата открыты', 2.0, '#bb66ff');
       this.#deps.camera.shake(6);
+      this.#saveCheckpoint();
     });
+
+    // Частичная жертва тоже необратима: записываем её сразу.
+    on('gate:sacrifice', () => this.#saveCheckpoint());
 
     // Спасение
     on('player:deathSave', () => {
@@ -256,7 +431,10 @@ export class GameScene {
 
       const line = KANE_DIALOGUES.boss?.phase?.[bossId]?.[phase - 2];
       if (line) {
-        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 3 }), 400);
+        this.#deferInRoom(() => {
+          if (!this.#dialogue.isActive && !this.#gateUI.visible)
+            eventBus.emit('player:speaks', { line, duration: 3 });
+        }, 400);
       }
     });
 
@@ -267,7 +445,10 @@ export class GameScene {
       const lines = KANE_DIALOGUES.boss?.defeat?.[bossId];
       if (lines && lines.length) {
         const line = lines[Math.floor(Math.random() * lines.length)];
-        setTimeout(() => eventBus.emit('player:speaks', { line, duration: 4 }), 1200);
+        this.#deferInRoom(() => {
+          if (!this.#dialogue.isActive && !this.#gateUI.visible)
+            eventBus.emit('player:speaks', { line, duration: 4 });
+        }, 1200);
       }
     });
   }
@@ -305,22 +486,36 @@ export class GameScene {
       return;
     }
 
-    // E — взаимодействие с NPC / Вратами
-    if (input.isPressed('interact')) {
-      this.#handleInteract();
+    if (this.#completed) {
+      if (input.isPressed('interact')) {
+        this.#deps.saveManager.deleteSave('auto');
+        window.location.reload();
+      }
+      return;
+    }
+    if (!this.#player.isAlive) {
+      if (input.isPressed('interact')) this.#restartFromCheckpoint();
+      this.#notifications.update(dt);
+      return;
     }
 
-    if (!this.#player.isAlive) {
+    // E — взаимодействие с NPC / Вратами.
+    if (input.isPressed('interact')) this.#handleInteract();
+    // Диалог открылся синхронно — не проводим лишний боевой тик под модальным UI.
+    if (this.#gateUI.visible || this.#dialogue.isActive) {
+      this.#player.clearBufferedAction();
       this.#notifications.update(dt);
       return;
     }
 
     // Основной апдейт
     const room = this.#level.currentRoom;
-    this.#player.update(dt, input, room.tilemap);
+    this.#player.update(dt, input, room.tilemap, room.enemies);
+    this.#abilities.update(dt);
     this.#level.update(dt, this.#player);
     this.#particles.update(dt);
     this.#notifications.update(dt);
+    this.#damageTintTimer = Math.max(0, this.#damageTintTimer - dt);
 
     // Проверка атак игрока
     this.#resolveAttacks();
@@ -354,13 +549,22 @@ export class GameScene {
           // Первый раз — комментарий Кейна
           if (!this.#firstGateApproached) {
             this.#firstGateApproached = true;
-            setTimeout(() => {
-              this.#deps.eventBus.emit('player:speaks', {
-                line: KANE_DIALOGUES.nearGate.first[0],
-                duration: 4,
-              });
-              // Откроем UI после реплики
-              setTimeout(() => this.#gateUI.show(), 4500);
+            this.#deferInRoom(() => {
+              if (!this.#dialogue.isActive) {
+                this.#deps.eventBus.emit('player:speaks', {
+                  line: KANE_DIALOGUES.nearGate.first[0],
+                  duration: 4,
+                });
+              }
+              // Жертва появляется только если игрок ещё рядом с теми же Вратами.
+              this.#deferInRoom(() => {
+                const currentGate = this.#level.currentRoom.gate;
+                if (!this.#deps.gateSystem.isActive() || !currentGate) return;
+                const d = MathUtils.distance(
+                  this.#player.x, this.#player.y, currentGate.x, currentGate.y);
+                if (d <= 24) this.#gateUI.show();
+                else this.#deps.gateSystem.cancel();
+              }, 4500);
             }, 300);
           } else {
             this.#gateUI.show();
@@ -437,15 +641,26 @@ export class GameScene {
     const door = this.#level.checkRoomTransition(this.#player);
     if (!door) return;
 
+    this.#rememberWorldState();
     if (door.toLevelKey) {
+      if (!hasLevel(door.toLevelKey)) {
+        // У демоверсии есть завершение; не пытаемся загрузить отсутствующий уровень.
+        this.#completed = true;
+        this.#deps.eventBus.emit('game:complete', { level: this.#currentLevelKey });
+        this.#saveCheckpoint();
+        return;
+      }
       this.#loadLevel(door.toLevelKey, door.toRoomId, door.targetSpawnDir);
+      this.#saveCheckpoint();
       return;
     }
 
+    this.#clearDeferredRoomEvents();
     this.#level.transitionToRoom(door.toRoomId, door.targetSpawnDir, this.#player);
     this.#bossEncountered = false;
     this.#setupCameraForRoom(door.targetSpawnDir);
     this.#checkBossEncounter();
+    this.#saveCheckpoint();
   }
 
   // === ОТРИСОВКА ===
@@ -457,6 +672,21 @@ export class GameScene {
     // Мир
     const room = this.#level.currentRoom;
     this.#worldRenderer.drawRoom(room, this.#player);
+    // Короткая тёмно-красная вспышка по краям без запроса дорогих фильтров.
+    if (this.#damageTintTimer > 0) {
+      const ctx = d.renderer.ctx;
+      const w = d.renderer.logicalWidth, h = d.renderer.logicalHeight;
+      const alpha = this.#damageTintTimer / 0.24 * 0.30;
+      ctx.save();
+      ctx.fillStyle = 'rgba(130,21,37,' + alpha.toFixed(3) + ')';
+      const edge = 26;
+      ctx.fillRect(0, 0, w, edge);
+      ctx.fillRect(0, h - edge, w, edge);
+      ctx.fillRect(0, edge, edge, h - edge * 2);
+      ctx.fillRect(w - edge, edge, edge, h - edge * 2);
+      ctx.restore();
+    }
+    this.#abilities.draw(d.renderer.ctx, d.camera);
 
     // Частицы
     this.#particles.render(d.renderer.ctx);
@@ -479,9 +709,8 @@ export class GameScene {
     this.#gateUI.draw();
 
     // Экран смерти
-    if (!this.#player.isAlive) {
-      this.#drawDeathScreen();
-    }
+    if (!this.#player.isAlive) this.#drawDeathScreen();
+    if (this.#completed) this.#drawCompletionScreen();
 
     d.renderer.endFrame();
   }
@@ -497,7 +726,7 @@ export class GameScene {
       }
     }
 
-    if (room.gate) {
+    if (room.gate && !room.isGateOpen) {
       const d = MathUtils.distance(this.#player.x, this.#player.y, room.gate.x, room.gate.y);
       if (d <= 24) {
         this.#hud.drawInteractHint('[E] Взаимодействовать с Вратами');
@@ -523,7 +752,27 @@ export class GameScene {
 
     ctx.font = '9px monospace';
     ctx.fillStyle = '#7a6a4a';
-    ctx.fillText('F5 — перезагрузить', W / 2, H / 2 + 14);
+    ctx.fillText('Нажмите E / «Действие» — повторить с контрольной точки', W / 2, H / 2 + 14);
+  }
+
+  #drawCompletionScreen() {
+    const ctx = this.#deps.renderer.ctx;
+    const W = this.#deps.renderer.logicalWidth;
+    const H = this.#deps.renderer.logicalHeight;
+    ctx.save();
+    ctx.fillStyle = 'rgba(7,5,11,0.9)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#d8bb81';
+    ctx.font = 'bold 25px serif';
+    ctx.fillText('ДЕМО ЗАВЕРШЕНО', W / 2, H / 2 - 26);
+    ctx.font = '12px serif';
+    ctx.fillStyle = '#d4cdc0';
+    ctx.fillText('Путешествие Кейна продолжится...', W / 2, H / 2 + 6);
+    ctx.font = '11px monospace';
+    ctx.fillText('E / «Действие» — новая игра', W / 2, H / 2 + 40);
+    ctx.restore();
   }
 
   // === Для Game ===
@@ -533,6 +782,8 @@ export class GameScene {
   }
 
   destroy() {
+    this.#clearDeferredRoomEvents();
+    this.#abilities?.destroy();
     for (const unsub of this.#unsubs) unsub();
     this.#unsubs = [];
   }
